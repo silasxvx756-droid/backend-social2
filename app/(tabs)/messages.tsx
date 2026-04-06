@@ -1,0 +1,375 @@
+import React, { useCallback, useEffect, useState, useRef } from "react";
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  StyleSheet,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  Alert,
+} from "react-native";
+import { Feather } from "@expo/vector-icons";
+import { useFocusEffect } from "@react-navigation/native";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { io } from "socket.io-client";
+
+const API_URL = "https://backend-social-app-1.onrender.com"; 
+const socket = io(API_URL, { transports: ["websocket"] });
+
+type Message = {
+  _id: string;
+  senderId: string;
+  receiverId: string;
+  content: string;
+  createdAt: string;
+};
+
+type User = {
+  clerkId: string;
+  username: string;
+  displayName?: string;
+  avatar?: string;
+  lastMessage?: Message | null;
+  unread?: boolean;
+  messages?: Message[];
+};
+
+// Função auxiliar para logar erros juntos
+const logError = (context: string, err?: any, res?: Response) => {
+  console.error("🛑 [ERRO]", context);
+  if (res) console.error("Status:", res.status, res.statusText);
+  if (err) console.error("Detalhes:", err);
+};
+
+export default function ConversationsScreen() {
+  const { currentUser } = useCurrentUser();
+  const insets = useSafeAreaInsets();
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [chatVisible, setChatVisible] = useState(false);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputText, setInputText] = useState("");
+
+  const flatListRef = useRef<FlatList>(null);
+
+  // Conectar socket
+  useEffect(() => {
+    if (!currentUser) return;
+    console.log("🔌 Conectando socket para usuário:", currentUser.id);
+    socket.emit("join", currentUser.id);
+  }, [currentUser]);
+
+  // Receber mensagens em tempo real
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleMessage = (msg: Message) => {
+      console.log("📩 Mensagem recebida:", msg);
+
+      const otherUserId =
+        msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
+
+      setUsers((prev) => {
+        const userExists = prev.find((u) => u.clerkId === otherUserId);
+        if (userExists) {
+          return prev
+            .map((u) =>
+              u.clerkId === otherUserId
+                ? {
+                    ...u,
+                    lastMessage: msg,
+                    unread: selectedUser?.clerkId !== otherUserId,
+                    messages: [...(u.messages || []), msg],
+                  }
+                : u
+            )
+            .sort((a, b) => {
+              const aTime = a.lastMessage
+                ? new Date(a.lastMessage.createdAt).getTime()
+                : 0;
+              const bTime = b.lastMessage
+                ? new Date(b.lastMessage.createdAt).getTime()
+                : 0;
+              return bTime - aTime;
+            });
+        } else {
+          return [
+            {
+              clerkId: otherUserId,
+              username: "Usuário",
+              displayName: "Usuário",
+              lastMessage: msg,
+              unread: selectedUser?.clerkId !== otherUserId,
+              messages: [msg],
+            },
+            ...prev,
+          ];
+        }
+      });
+
+      if (
+        selectedUser &&
+        (msg.senderId === selectedUser.clerkId ||
+          msg.receiverId === selectedUser.clerkId)
+      ) {
+        setMessages((prev) => [...prev, msg]);
+      }
+    };
+
+    socket.on("message", handleMessage);
+    socket.on("connect_error", (err) => logError("Erro Socket.IO", err));
+    return () => socket.off("message", handleMessage);
+  }, [currentUser, selectedUser]);
+
+  // Carrega histórico de usuários
+  const loadUsers = useCallback(async () => {
+    if (!currentUser) return;
+    console.log("🔄 Carregando usuários...");
+
+    try {
+      const res = await fetch(`${API_URL}/users?exclude=${currentUser.id}`);
+      if (!res.ok) return logError("Erro ao buscar usuários", null, res);
+
+      const data: User[] = await res.json();
+      console.log("✅ Usuários carregados:", data.length);
+
+      const usersWithLast = await Promise.all(
+        data.map(async (user) => {
+          try {
+            const resMsg = await fetch(
+              `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
+            );
+            if (!resMsg.ok) return logError(`Erro mensagens ${user.username}`, null, resMsg);
+
+            const msgs: Message[] = await resMsg.json();
+            const last = msgs[msgs.length - 1];
+
+            return {
+              ...user,
+              lastMessage: last || null,
+              messages: msgs || [],
+              unread: false,
+            };
+          } catch (err) {
+            logError(`Erro fetch mensagens ${user.username}`, err);
+            return { ...user, lastMessage: null, messages: [], unread: false };
+          }
+        })
+      );
+
+      setUsers(
+        usersWithLast
+          .filter((u) => u.messages && u.messages.length > 0)
+          .sort((a, b) => {
+            const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+            const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+            return bTime - aTime;
+          })
+      );
+    } catch (err) {
+      logError("Erro loadUsers", err);
+    }
+  }, [currentUser]);
+
+  const loadMessages = async (user: User) => {
+    if (!currentUser) return;
+    try {
+      const res = await fetch(
+        `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
+      );
+      if (!res.ok) return logError("Erro ao buscar mensagens", null, res);
+
+      const data: Message[] = await res.json();
+      console.log(`📥 Mensagens carregadas para ${user.username}:`, data.length);
+      setMessages(data);
+    } catch (err) {
+      logError("Erro loadMessages", err);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!currentUser || !selectedUser || !inputText.trim()) return;
+
+    const body = {
+      senderId: currentUser.id,
+      receiverId: selectedUser.clerkId,
+      content: inputText,
+    };
+
+    try {
+      const res = await fetch(`${API_URL}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) return logError("Erro ao enviar mensagem", null, res);
+      console.log("📤 Mensagem enviada:", body);
+      setInputText("");
+    } catch (err) {
+      logError("Erro sendMessage", err);
+    }
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUsers();
+    }, [loadUsers])
+  );
+
+  const openChat = (user: User) => {
+    console.log("💬 Abrindo chat com:", user.username);
+    setSelectedUser(user);
+    setChatVisible(true);
+
+    if (user.messages && user.messages.length > 0) {
+      setMessages(user.messages);
+    } else {
+      loadMessages(user);
+    }
+
+    setUsers((prev) =>
+      prev.map((u) =>
+        u.clerkId === user.clerkId ? { ...u, unread: false } : u
+      )
+    );
+  };
+
+  const getDisplayName = (user: User | null) =>
+    user?.displayName || user?.username || currentUser?.fullName || "Usuário";
+
+  const getAvatar = (user: User | null) =>
+    user?.avatar || currentUser?.profileImageUrl || null;
+
+  return (
+    <View style={styles.container}>
+      <Text
+        style={[styles.headerTitle, { paddingTop: insets.top + 20, paddingHorizontal: 16 }]}
+      >
+        Mensagens
+      </Text>
+
+      <FlatList
+        data={users}
+        keyExtractor={(i) => i.clerkId}
+        renderItem={({ item }) => (
+          <View style={styles.userItem}>
+            <TouchableOpacity
+              style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
+              onPress={() => openChat(item)}
+            >
+              {getAvatar(item) ? (
+                <Image source={{ uri: getAvatar(item) }} style={styles.avatar} />
+              ) : (
+                <View style={styles.avatarPlaceholder}>
+                  <Feather name="user" size={22} color="#999" />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{getDisplayName(item)}</Text>
+                {item.lastMessage && (
+                  <Text style={styles.lastMessage} numberOfLines={1}>
+                    {item.lastMessage.content}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+      />
+
+      {/* Modal do Chat */}
+      <Modal visible={chatVisible} animationType="slide">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <View style={styles.chatHeader}>
+            <TouchableOpacity onPress={() => setChatVisible(false)}>
+              <Feather name="arrow-left" size={20} />
+            </TouchableOpacity>
+
+            {selectedUser && getAvatar(selectedUser) && (
+              <Image source={{ uri: getAvatar(selectedUser) }} style={styles.avatar} />
+            )}
+
+            <Text style={styles.chatTitle}>{getDisplayName(selectedUser)}</Text>
+          </View>
+
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(i) => i._id}
+            contentContainerStyle={{ padding: 10 }}
+            onContentSizeChange={() =>
+              flatListRef.current?.scrollToEnd({ animated: true })
+            }
+            renderItem={({ item }) => {
+              const isMe = item.senderId === currentUser?.id;
+              return (
+                <View
+                  style={[
+                    styles.bubble,
+                    {
+                      alignSelf: isMe ? "flex-end" : "flex-start",
+                      backgroundColor: isMe ? "#000" : "#e5e5e5",
+                    },
+                  ]}
+                >
+                  <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.content}</Text>
+                </View>
+              );
+            }}
+          />
+
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.input}
+              placeholder="Digite uma mensagem..."
+              value={inputText}
+              onChangeText={setInputText}
+            />
+            <TouchableOpacity style={styles.send} onPress={sendMessage}>
+              <Feather name="send" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: "#fff" },
+  headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
+  userItem: {
+    flexDirection: "row",
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
+  name: { fontSize: 16, fontWeight: "600" },
+  lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
+  chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
+  chatTitle: { marginLeft: 10, fontWeight: "700", fontSize: 16 },
+  bubble: { padding: 12, borderRadius: 16, marginBottom: 8, maxWidth: "90%" },
+  inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
+  input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
+  send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
+});
