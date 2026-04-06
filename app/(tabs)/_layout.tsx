@@ -9,7 +9,7 @@ import axios from "axios";
 
 import { useUserSync } from "../../hooks/useUserSync";
 
-const API_URL = "http://192.168.0.103:3000";
+const API_URL = "https://backend-social-app-1.onrender.com";
 
 const TabsLayout = () => {
   // ------------------- CLERK / USER -------------------
@@ -82,7 +82,7 @@ const TabsLayout = () => {
           display: keyboardVisible ? "none" : "flex",
           backgroundColor,
           borderTopWidth: 0.5,
-          borderTopColor: "#E5E7EB", // cor fixa clara
+          borderTopColor: "#E5E7EB",
           height: 55 + insets.bottom,
           paddingBottom: insets.bottom,
         },
@@ -152,9 +152,6 @@ const TabsLayout = () => {
             case "search":
               iconName = focused ? "search" : "search-outline";
               break;
-            case "reels":
-              iconName = focused ? "play-circle" : "play-circle-outline";
-              break;
             default:
               iconName = "ellipse";
           }
@@ -165,7 +162,6 @@ const TabsLayout = () => {
     >
       <Tabs.Screen name="index" />
       <Tabs.Screen name="search" />
-      <Tabs.Screen name="reels" />
       <Tabs.Screen name="notifications" />
       <Tabs.Screen name="messages" />
       <Tabs.Screen name="profile" />

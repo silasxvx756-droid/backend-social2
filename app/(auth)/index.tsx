@@ -15,7 +15,7 @@ import {
 import { useRouter } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
 
-const API_URL = "http://192.168.0.100:3000";
+const API_URL = "https://backend-social-app-1.onrender.com";
 
 export default function Index() {
   const { handleSocialAuth, isLoading: isSocialLoading } = useSocialAuth();
