@@ -1,0 +1,176 @@
+// TabsLayout.tsx
+import React, { useState, useEffect } from "react";
+import { Image, ActivityIndicator, View, Keyboard } from "react-native";
+import { Tabs, Redirect, useNavigation } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useAuth, useUser } from "@clerk/clerk-expo";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import axios from "axios";
+
+import { useUserSync } from "../../hooks/useUserSync";
+
+const API_URL = "http://192.168.0.103:3000";
+
+const TabsLayout = () => {
+  // ------------------- CLERK / USER -------------------
+  const { isSignedIn, isLoaded } = useAuth();
+  const { user } = useUser();
+  useUserSync(); // sincroniza dados do usuário
+
+  // ------------------- HOOKS -------------------
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+
+  // ------------------- KEYBOARD LISTENERS -------------------
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  // ------------------- CHECK NOVAS MENSAGENS -------------------
+  const checkNewMessages = async () => {
+    if (!user?.id) return;
+    try {
+      const res = await axios.get(`${API_URL}/api/messages/unread/${user.id}`);
+      setHasNewMessages(res.data.unreadCount > 0);
+    } catch (err) {
+      console.error("Erro ao buscar mensagens não lidas:", err);
+    }
+  };
+
+  useEffect(() => {
+    const interval = setInterval(() => checkNewMessages(), 5000);
+    checkNewMessages(); // fetch inicial
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
+  // reseta ponto vermelho ao entrar na aba de mensagens
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => setHasNewMessages(false));
+    return () => unsubscribe();
+  }, [navigation]);
+
+  // ------------------- RENDER LOADING / REDIRECT -------------------
+  if (!isLoaded) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator />
+      </View>
+    );
+  }
+
+  if (!isSignedIn) {
+    return <Redirect href="/(auth)/login" />;
+  }
+
+  const backgroundColor = "#FFF"; // cor fixa sem dark mode
+
+  // ------------------- TABS -------------------
+  return (
+    <Tabs
+      screenOptions={({ route }) => ({
+        headerShown: false,
+        tabBarShowLabel: false,
+        tabBarStyle: {
+          display: keyboardVisible ? "none" : "flex",
+          backgroundColor,
+          borderTopWidth: 0.5,
+          borderTopColor: "#E5E7EB", // cor fixa clara
+          height: 55 + insets.bottom,
+          paddingBottom: insets.bottom,
+        },
+        tabBarIcon: ({ focused, color }) => {
+          // PROFILE
+          if (route.name === "profile") {
+            if (user?.imageUrl) {
+              return (
+                <Image
+                  source={{ uri: user.imageUrl }}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    borderWidth: focused ? 2 : 0,
+                    borderColor: focused ? "#000" : "transparent",
+                  }}
+                />
+              );
+            }
+            return <Ionicons name="person-outline" size={24} color={focused ? "#000" : color} />;
+          }
+
+          // NOTIFICATIONS
+          if (route.name === "notifications") {
+            return (
+              <Ionicons
+                name={focused ? "notifications" : "notifications-outline"}
+                size={24}
+                color={focused ? "#000" : color}
+              />
+            );
+          }
+
+          // MESSAGES
+          if (route.name === "messages") {
+            return (
+              <View>
+                <Ionicons
+                  name={focused ? "chatbubble" : "chatbubble-outline"}
+                  size={24}
+                  color={focused ? "#000" : color}
+                />
+                {hasNewMessages && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: 2,
+                      right: 0,
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: "red",
+                    }}
+                  />
+                )}
+              </View>
+            );
+          }
+
+          // OUTROS ICONES
+          let iconName = "";
+          switch (route.name) {
+            case "index":
+              iconName = focused ? "home" : "home-outline";
+              break;
+            case "search":
+              iconName = focused ? "search" : "search-outline";
+              break;
+            case "reels":
+              iconName = focused ? "play-circle" : "play-circle-outline";
+              break;
+            default:
+              iconName = "ellipse";
+          }
+
+          return <Ionicons name={iconName as any} size={24} color={focused ? "#000" : color} />;
+        },
+      })}
+    >
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="search" />
+      <Tabs.Screen name="reels" />
+      <Tabs.Screen name="notifications" />
+      <Tabs.Screen name="messages" />
+      <Tabs.Screen name="profile" />
+    </Tabs>
+  );
+};
+
+export default TabsLayout;
