@@ -8,17 +8,17 @@ import {
   ActivityIndicator,
   SafeAreaView,
   TouchableOpacity,
+  Modal,
   FlatList,
+  TextInput,
   KeyboardAvoidingView,
   Platform,
-  TextInput,
-  Modal,
 } from "react-native";
 import { useUser } from "@clerk/clerk-expo";
 import { useRoute, useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
-import PostsList from "../components/PostsList";
 import { Ionicons } from "@expo/vector-icons";
+import PostsList from "../components/PostsList";
 
 const API_URL = "https://backend-social-app-1.onrender.com";
 
@@ -44,6 +44,22 @@ export default function UserProfile() {
 
   const isMyProfile = !userId || userId === user?.id;
 
+  // ================= LOG PARA BASH =================
+  useEffect(() => {
+    if (user) {
+      console.log("=== USERPROFILE LOG ===");
+      console.log("Usuário logado (quem abriu o perfil):", {
+        id: user.id,
+        username: user.username,
+        displayName: user.fullName || user.firstName,
+      });
+      console.log("Perfil sendo visualizado (userId da rota):", userId || user.id);
+      console.log("É próprio perfil?", isMyProfile);
+      console.log("=======================");
+    }
+  }, [user, userId, isMyProfile]);
+  // ================================================
+
   // ================= COUNTS =================
   const refreshCounts = async (clerkId: string) => {
     try {
@@ -58,7 +74,6 @@ export default function UserProfile() {
       const followingData: any[] = await followingRes.json();
 
       const userPosts = postsData.filter((post) => post.actor.id === clerkId);
-
       followersRef.current = followersData.length;
 
       setProfileData((prev) =>
@@ -113,7 +128,6 @@ export default function UserProfile() {
   // ================= FOLLOW =================
   const checkFollowStatus = async (clerkIdParam?: string) => {
     if (!user) return;
-
     const clerkId = clerkIdParam || profileData?.clerkId;
     if (!clerkId) return;
 
@@ -439,8 +453,8 @@ export default function UserProfile() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   header: { alignItems: "center", paddingTop: 60, paddingHorizontal: 16 },
-  avatar: { width: 90, height: 90, borderRadius: 45, marginLeft: -5 }, // <- avatar movido 5px
-  name: { fontSize: 20, fontWeight: "700", marginTop: 12, marginLeft: -5 }, // <- nome movido 5px
+  avatar: { width: 90, height: 90, borderRadius: 45, marginLeft: -5 },
+  name: { fontSize: 20, fontWeight: "700", marginTop: 12, marginLeft: -5 },
   statsContainer: {
     flexDirection: "row",
     justifyContent: "space-around",

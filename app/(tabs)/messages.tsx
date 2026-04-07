@@ -1,3 +1,4 @@
+// ConversationsScreen.tsx
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
@@ -12,11 +13,12 @@ import {
   Platform,
   Alert,
 } from "react-native";
+import * as Clipboard from "expo-clipboard"; // ✅ import clipboard
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { io } from "socket.io-client";
+import { io, Socket } from "socket.io-client";
 
 const API_URL = "https://backend-social-app-1.onrender.com";
 
@@ -48,15 +50,16 @@ export default function ConversationsScreen() {
   const { currentUser } = useCurrentUser();
   const insets = useSafeAreaInsets();
 
-  const socketRef = useRef<any>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const flatListRef = useRef<FlatList>(null);
 
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [users, setUsers] = useState<User[]>([]);
+  const [searchText, setSearchText] = useState("");
   const [chatVisible, setChatVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
-
-  const flatListRef = useRef<FlatList>(null);
 
   /* ================= SOCKET ================= */
   useEffect(() => {
@@ -64,6 +67,7 @@ export default function ConversationsScreen() {
 
     const socket = io(API_URL, {
       transports: ["websocket"],
+      secure: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
@@ -76,17 +80,15 @@ export default function ConversationsScreen() {
       socket.emit("join", currentUser.id);
     });
 
-    socket.on("connect_error", (err) => {
-      console.log("❌ erro socket:", err.message);
+    socket.on("connect_error", (err: any) => {
+      console.log("❌ Socket connect_error:", err.message);
     });
 
     socket.on("disconnect", () => {
-      console.log("⚪ desconectado");
+      console.log("⚪ Socket desconectado");
     });
 
     socket.on("message", (msg: Message) => {
-      console.log("📩 Mensagem recebida:", msg);
-
       const otherUserId =
         msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
@@ -146,12 +148,12 @@ export default function ConversationsScreen() {
   /* ================= LOAD USERS ================= */
   const loadUsers = useCallback(async () => {
     if (!currentUser) return;
-
     try {
       const res = await fetch(`${API_URL}/users?exclude=${currentUser.id}`);
       if (!res.ok) return logError("Erro ao buscar usuários", null, res);
 
       const data: User[] = await res.json();
+      setAllUsers(data);
 
       const usersWithLast = await Promise.all(
         data.map(async (user) => {
@@ -180,7 +182,7 @@ export default function ConversationsScreen() {
 
       setUsers(
         usersWithLast
-          .filter((u) => u.messages && u.messages.length > 0)
+          .filter((u) => u.lastMessage)
           .sort((a, b) => {
             const aTime = a.lastMessage
               ? new Date(a.lastMessage.createdAt).getTime()
@@ -198,7 +200,6 @@ export default function ConversationsScreen() {
 
   const loadMessages = async (user: User) => {
     if (!currentUser) return;
-
     try {
       const res = await fetch(
         `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
@@ -262,8 +263,20 @@ export default function ConversationsScreen() {
   const getDisplayName = (user: User | null) =>
     user?.displayName || user?.username || "Usuário";
 
-  const getAvatar = (user: User | null) =>
-    user?.avatar || null;
+  const getAvatar = (user: User | null) => user?.avatar || null;
+
+  const copyMessage = async (content: string) => {
+    await Clipboard.setStringAsync(content);
+    Alert.alert("Mensagem copiada!", content);
+  };
+
+  const displayedUsers = searchText
+    ? allUsers.filter(u =>
+        (u.displayName || u.username)
+          .toLowerCase()
+          .includes(searchText.toLowerCase())
+      )
+    : users;
 
   return (
     <View style={styles.container}>
@@ -276,8 +289,22 @@ export default function ConversationsScreen() {
         Mensagens
       </Text>
 
+      <View style={styles.searchContainer}>
+        <Feather name="search" size={20} color="#999" style={{ marginHorizontal: 8 }} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Pesquisar usuários..."
+          value={searchText}
+          onChangeText={setSearchText}
+        />
+      </View>
+
       <FlatList
-        data={users}
+        data={displayedUsers.sort((a, b) => {
+          const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+          const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+          return bTime - aTime;
+        })}
         keyExtractor={(i) => i.clerkId}
         renderItem={({ item }) => (
           <View style={styles.userItem}>
@@ -286,10 +313,7 @@ export default function ConversationsScreen() {
               onPress={() => openChat(item)}
             >
               {getAvatar(item) ? (
-                <Image
-                  source={{ uri: getAvatar(item)! }}
-                  style={styles.avatar}
-                />
+                <Image source={{ uri: getAvatar(item)! }} style={styles.avatar} />
               ) : (
                 <View style={styles.avatarPlaceholder}>
                   <Feather name="user" size={22} color="#999" />
@@ -319,9 +343,7 @@ export default function ConversationsScreen() {
               <Feather name="arrow-left" size={20} />
             </TouchableOpacity>
 
-            <Text style={styles.chatTitle}>
-              {getDisplayName(selectedUser)}
-            </Text>
+            <Text style={styles.chatTitle}>{getDisplayName(selectedUser)}</Text>
           </View>
 
           <FlatList
@@ -336,7 +358,8 @@ export default function ConversationsScreen() {
               const isMe = item.senderId === currentUser?.id;
 
               return (
-                <View
+                <TouchableOpacity
+                  onPress={() => copyMessage(item.content)} // ✅ copiar ao pressionar
                   style={[
                     styles.bubble,
                     {
@@ -348,7 +371,7 @@ export default function ConversationsScreen() {
                   <Text style={{ color: isMe ? "#fff" : "#000" }}>
                     {item.content}
                   </Text>
-                </View>
+                </TouchableOpacity>
               );
             }}
           />
@@ -412,5 +435,20 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 10,
     marginLeft: 8,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    height: 40,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
   },
 });

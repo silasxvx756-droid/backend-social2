@@ -1,5 +1,5 @@
 // PostsList.tsx
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import {
   FlatList,
   View,
@@ -26,34 +26,19 @@ const { width } = Dimensions.get("window");
 // ID da postagem que será propaganda
 const AD_POST_ID = "69d4cec46935552434b0556b";
 
-// 🔥 ANÚNCIO OTIMIZADO
-const AdItem = React.memo(({ post, navigation }: any) => {
+// 🔥 Anúncio otimizado
+const AdItem = React.memo(({ post }: any) => {
   if (!post) return null;
-
   return (
     <View style={styles.adContainer}>
       <View style={styles.postCard}>
         <View style={styles.contentPadding}>
           <View style={styles.postHeader}>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("UserProfile", { userId: post.actor.id })
-              }
-            >
-              <Image
-                source={{ uri: post.actor.avatar }}
-                style={styles.postAvatar}
-              />
-            </TouchableOpacity>
-
+            <Image source={{ uri: post.actor.avatar }} style={styles.postAvatar} />
             <View style={styles.nameRowHorizontal}>
-              <Text style={styles.postUsername}>
-                {post.actor.displayName}
-              </Text>
+              <Text style={styles.postUsername}>{post.actor.displayName}</Text>
               <Text style={styles.postTimeHorizontal}>
-                {post.createdAt
-                  ? new Date(post.createdAt).toLocaleDateString()
-                  : ""}
+                {post.createdAt ? new Date(post.createdAt).toLocaleDateString() : ""}
               </Text>
             </View>
           </View>
@@ -77,7 +62,7 @@ const AdItem = React.memo(({ post, navigation }: any) => {
 });
 
 export default function PostsList({
-  username,
+  username, // ID do usuário para filtrar posts
   showNewPostButton = true,
   initialPosts = [],
   onPostAction,
@@ -88,7 +73,6 @@ export default function PostsList({
   const [posts, setPosts] = useState(initialPosts);
   const [loading, setLoading] = useState(!initialPosts.length);
   const [refreshing, setRefreshing] = useState(false);
-
   const [modalVisible, setModalVisible] = useState(false);
   const [content, setContent] = useState("");
   const [image, setImage] = useState<any>(null);
@@ -127,9 +111,8 @@ export default function PostsList({
       const res = await fetch(`${API_URL}/posts`);
       const data = await res.json();
 
-      const filtered = username
-        ? data.filter((p: any) => p.actor?.id === username)
-        : data;
+      // Filtra posts do usuário se username for fornecido
+      const filtered = username ? data.filter((p: any) => p.actor?.id === username) : data;
 
       const postsWithLiked = (filtered || []).map((p: any) => ({
         ...p,
@@ -145,73 +128,57 @@ export default function PostsList({
     }
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchPosts();
+    }, [username])
+  );
+
   const onRefresh = async () => {
     setRefreshing(true);
     await fetchPosts();
     setRefreshing(false);
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      if (!posts.length) fetchPosts();
-    }, [username])
-  );
-
+  // Função para selecionar imagem
   const pickImage = async () => {
-    const { status } =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return;
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 1,
     });
-
     if (!result.canceled) {
       const asset = result.assets[0];
-      setImage({
-        uri: asset.uri,
-        width: asset.width,
-        height: asset.height,
-      });
+      setImage({ uri: asset.uri, width: asset.width, height: asset.height });
     }
   };
 
+  // Criar novo post
   const handleCreatePost = async () => {
     if (!content.trim() && !image) return;
-
     try {
       setPosting(true);
-
       const form = new FormData();
       form.append("title", "Post");
       form.append("content", content);
       form.append("actor", JSON.stringify(currentUser));
-
       if (image) {
         const uriParts = image.uri.split(".");
         const fileType = uriParts[uriParts.length - 1];
-
         form.append("image", {
           uri: image.uri,
           name: `photo.${fileType}`,
           type: `image/${fileType === "jpg" ? "jpeg" : fileType}`,
         } as any);
       }
-
-      const res = await fetch(`${API_URL}/posts/upload`, {
-        method: "POST",
-        body: form,
-      });
-
+      const res = await fetch(`${API_URL}/posts/upload`, { method: "POST", body: form });
       const newPost = await res.json();
       const newPosts = [newPost, ...posts];
-
       setPosts(newPosts);
       setModalVisible(false);
       setContent("");
       setImage(null);
-
       if (onPostAction) onPostAction(newPosts);
     } catch {
       Alert.alert("Erro ao postar");
@@ -222,9 +189,7 @@ export default function PostsList({
 
   const handleLike = async (postId: string) => {
     if (likingPostId) return;
-
     setLikingPostId(postId);
-
     setPosts((prev) =>
       prev.map((p) =>
         p._id === postId
@@ -238,7 +203,6 @@ export default function PostsList({
           : p
       )
     );
-
     try {
       await fetch(`${API_URL}/posts/${postId}/like`, {
         method: "POST",
@@ -260,10 +224,7 @@ export default function PostsList({
         style: "destructive",
         onPress: async () => {
           try {
-            await fetch(`${API_URL}/posts/${postId}`, {
-              method: "DELETE",
-            });
-
+            await fetch(`${API_URL}/posts/${postId}`, { method: "DELETE" });
             const updatedPosts = posts.filter((p) => p._id !== postId);
             setPosts(updatedPosts);
             if (onPostAction) onPostAction(updatedPosts);
@@ -283,19 +244,13 @@ export default function PostsList({
 
   const handleComment = async () => {
     if (!commentText.trim() || !selectedPost) return;
-
     try {
-      const res = await fetch(
-        `${API_URL}/posts/${selectedPost._id}/comments`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user: currentUser, text: commentText }),
-        }
-      );
-
+      const res = await fetch(`${API_URL}/posts/${selectedPost._id}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user: currentUser, text: commentText }),
+      });
       const newComment = await res.json();
-
       setComments((prev) => [...prev, newComment]);
       setCommentText("");
     } catch {
@@ -304,53 +259,30 @@ export default function PostsList({
   };
 
   const adPost = posts.find((p) => p._id === AD_POST_ID);
-
   const mixedData = useMemo(() => {
     return posts.flatMap((post, index) =>
-      (index + 1) % 5 === 0 && adPost
-        ? [post, { type: "ad", ...adPost }]
-        : [post]
+      (index + 1) % 5 === 0 && adPost ? [post, { type: "ad", ...adPost }] : [post]
     );
   }, [posts, adPost]);
 
   const renderItem = ({ item }: any) => {
-    if (item.type === "ad")
-      return <AdItem post={item} navigation={navigation} />;
+    if (item.type === "ad") return <AdItem post={item} />;
 
     const displayName =
-      item.actor?.id === currentUser.id
-        ? currentUser.displayName
-        : item.actor?.displayName;
+      item.actor?.id === currentUser.id ? currentUser.displayName : item.actor?.displayName;
 
     return (
       <View style={styles.postCard}>
         <View style={styles.contentPadding}>
           <View style={styles.postHeader}>
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("UserProfile", {
-                  userId: item.actor?.id,
-                })
-              }
-            >
-              <Image
-                source={{ uri: item.actor?.avatar }}
-                style={styles.postAvatar}
-              />
-            </TouchableOpacity>
-
+            <Image source={{ uri: item.actor?.avatar }} style={styles.postAvatar} />
             <View style={styles.nameRowHorizontal}>
               <Text style={styles.postUsername}>{displayName}</Text>
-              <Text style={styles.postTimeHorizontal}>
-                {formatTime(item.createdAt)}
-              </Text>
+              <Text style={styles.postTimeHorizontal}>{formatTime(item.createdAt)}</Text>
             </View>
 
             {item.actor?.id === currentUser.id && (
-              <TouchableOpacity
-                onPress={() => handleDeletePost(item._id)}
-                style={{ marginLeft: "auto" }}
-              >
+              <TouchableOpacity onPress={() => handleDeletePost(item._id)} style={{ marginLeft: "auto" }}>
                 <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
               </TouchableOpacity>
             )}
@@ -358,46 +290,25 @@ export default function PostsList({
         </View>
 
         {item.image && (
-          <Image
-            source={{ uri: item.image }}
-            style={styles.postImage}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
+          <Image source={{ uri: item.image }} style={styles.postImage} contentFit="cover" cachePolicy="memory-disk" />
         )}
 
         <View style={styles.contentPadding}>
           <View style={styles.actionsRow}>
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => handleLike(item._id)}
-            >
-              <Ionicons
-                name={item.likedByMe ? "heart" : "heart-outline"}
-                size={22}
-                color={item.likedByMe ? "#ff3040" : "#222"}
-              />
-              <Text style={styles.count}>
-                {item.likes?.length || 0}
-              </Text>
+            <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item._id)}>
+              <Ionicons name={item.likedByMe ? "heart" : "heart-outline"} size={22} color={item.likedByMe ? "#ff3040" : "#222"} />
+              <Text style={styles.count}>{item.likes?.length || 0}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={styles.actionBtn}
-              onPress={() => openComments(item)}
-            >
+            <TouchableOpacity style={styles.actionBtn} onPress={() => openComments(item)}>
               <Ionicons name="chatbubble-outline" size={20} />
-              <Text style={styles.count}>
-                {item.comments?.length || 0}
-              </Text>
+              <Text style={styles.count}>{item.comments?.length || 0}</Text>
             </TouchableOpacity>
           </View>
 
           {item.content?.trim().length > 0 && (
             <Text style={{ marginTop: 6 }}>
-              <Text style={{ fontWeight: "600" }}>
-                {displayName}{" "}
-              </Text>
+              <Text style={{ fontWeight: "600" }}>{displayName} </Text>
               {item.content}
             </Text>
           )}
@@ -406,20 +317,13 @@ export default function PostsList({
     );
   };
 
-  if (loading)
-    return <ActivityIndicator size="large" style={{ marginTop: 20 }} />;
+  if (loading) return <ActivityIndicator size="large" style={{ marginTop: 20 }} />;
 
   return (
     <View style={{ flex: 1 }}>
       {showNewPostButton && (
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("PostCreate", {
-                onPostCreated: fetchPosts,
-              })
-            }
-          >
+          <TouchableOpacity onPress={() => navigation.navigate("PostCreate", { onPostCreated: fetchPosts })}>
             <Ionicons name="add" size={32} />
           </TouchableOpacity>
         </View>
@@ -427,9 +331,7 @@ export default function PostsList({
 
       <FlatList
         data={mixedData}
-        keyExtractor={(item: any, index) =>
-          item._id || item.id || index.toString()
-        }
+        keyExtractor={(item: any, index) => item._id || item.id || index.toString()}
         renderItem={renderItem}
         initialNumToRender={5}
         maxToRenderPerBatch={5}
@@ -437,9 +339,7 @@ export default function PostsList({
         removeClippedSubviews
         updateCellsBatchingPeriod={50}
         showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       />
 
       <Modal visible={commentsModal} animationType="slide">
@@ -455,24 +355,15 @@ export default function PostsList({
             <FlatList
               data={comments}
               keyExtractor={(item) => item._id}
-              renderItem={({ item }) => {
-                const isMyComment = item.user.id === currentUser.id;
-
-                return (
-                  <View style={{ flexDirection: "row", marginBottom: 12 }}>
-                    <Image
-                      source={{ uri: item.user.avatar }}
-                      style={styles.commentAvatar}
-                    />
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={{ fontWeight: "700" }}>
-                        {item.user.displayName}
-                      </Text>
-                      <Text>{item.text}</Text>
-                    </View>
+              renderItem={({ item }) => (
+                <View style={{ flexDirection: "row", marginBottom: 12 }}>
+                  <Image source={{ uri: item.user.avatar }} style={styles.commentAvatar} />
+                  <View style={{ flex: 1, marginLeft: 8 }}>
+                    <Text style={{ fontWeight: "700" }}>{item.user.displayName}</Text>
+                    <Text>{item.text}</Text>
                   </View>
-                );
-              }}
+                </View>
+              )}
             />
 
             <View style={{ flexDirection: "row", marginTop: 8 }}>
@@ -482,14 +373,7 @@ export default function PostsList({
                 placeholder="Comentário..."
                 style={[styles.input, { marginRight: 8 }]}
               />
-              <TouchableOpacity
-                onPress={handleComment}
-                style={{
-                  backgroundColor: "#000",
-                  padding: 10,
-                  borderRadius: 20,
-                }}
-              >
+              <TouchableOpacity onPress={handleComment} style={{ backgroundColor: "#000", padding: 10, borderRadius: 20 }}>
                 <Ionicons name="send" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -505,12 +389,7 @@ const styles = StyleSheet.create({
   postCard: { marginBottom: 16, backgroundColor: "#fff" },
   postHeader: { flexDirection: "row", alignItems: "center" },
   postAvatar: { width: 32, height: 32, borderRadius: 16 },
-  nameRowHorizontal: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginLeft: 8,
-    gap: 6,
-  },
+  nameRowHorizontal: { flexDirection: "row", alignItems: "center", marginLeft: 8, gap: 6 },
   postUsername: { fontWeight: "700", fontSize: 14 },
   postTimeHorizontal: { fontSize: 12, color: "#555" },
   postImage: { width: "100%", height: width, marginVertical: 8 },
@@ -519,25 +398,10 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
   count: { fontSize: 12 },
 
-  adContainer: {
-    padding: 0,
-    marginBottom: 16,
-    backgroundColor: "#fff",
-  },
+  adContainer: { padding: 0, marginBottom: 16, backgroundColor: "#fff" },
 
-  commentsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
+  commentsHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   commentsTitle: { fontWeight: "700", fontSize: 18 },
   commentAvatar: { width: 32, height: 32, borderRadius: 16 },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    height: 40,
-  },
+  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 20, paddingHorizontal: 12, height: 40 },
 });

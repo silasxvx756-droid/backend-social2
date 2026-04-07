@@ -200,7 +200,8 @@ export default function ProfileScreen() {
             <Text style={{ color: "#000", fontWeight: "600" }}>Editar Perfil</Text>
           </TouchableOpacity>
 
-          {/* STATS */}
+          {/* STATS OCULTOS */}
+          {/*
           <View
             style={{
               flexDirection: "row",
@@ -225,6 +226,7 @@ export default function ProfileScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          */}
         </View>
 
         {/* POSTS */}

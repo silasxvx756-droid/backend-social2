@@ -4,36 +4,29 @@
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon2.png",
+    "icon": "./assets/images/icon3.png",
     "scheme": "mobile",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
-
     "ios": {
       "supportsTablet": true
     },
-
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/icon2.png",
-        "backgroundImage": "./assets/images/icon2.png",
-        "monochromeImage": "./assets/images/icon2.png"
+        "foregroundImage": "./assets/images/icon3.png",
+        "backgroundImage": "./assets/images/icon3.png",
+        "monochromeImage": "./assets/images/icon3.png"
       },
-
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
-
       "softwareKeyboardLayoutMode": "resize",
-
       "package": "com.silasxvx.mobile"
     },
-
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -42,20 +35,15 @@
           "image": "./assets/images/splash.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
-          "dark": {
-            "backgroundColor": "#000000"
-          }
+          "backgroundColor": "#ffffff"
         }
       ],
       "expo-web-browser"
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
       "router": {},
       "eas": {
