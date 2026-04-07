@@ -18,8 +18,7 @@ import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { io } from "socket.io-client";
 
-const API_URL = "https://backend-social-app-1.onrender.com"; 
-const socket = io(API_URL, { transports: ["websocket"] });
+const API_URL = "https://backend-social-app-1.onrender.com";
 
 type Message = {
   _id: string;
@@ -39,7 +38,6 @@ type User = {
   messages?: Message[];
 };
 
-// Função auxiliar para logar erros juntos
 const logError = (context: string, err?: any, res?: Response) => {
   console.error("🛑 [ERRO]", context);
   if (res) console.error("Status:", res.status, res.statusText);
@@ -50,6 +48,8 @@ export default function ConversationsScreen() {
   const { currentUser } = useCurrentUser();
   const insets = useSafeAreaInsets();
 
+  const socketRef = useRef<any>(null);
+
   const [users, setUsers] = useState<User[]>([]);
   const [chatVisible, setChatVisible] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
@@ -58,26 +58,42 @@ export default function ConversationsScreen() {
 
   const flatListRef = useRef<FlatList>(null);
 
-  // Conectar socket
-  useEffect(() => {
-    if (!currentUser) return;
-    console.log("🔌 Conectando socket para usuário:", currentUser.id);
-    socket.emit("join", currentUser.id);
-  }, [currentUser]);
-
-  // Receber mensagens em tempo real
+  /* ================= SOCKET ================= */
   useEffect(() => {
     if (!currentUser) return;
 
-    const handleMessage = (msg: Message) => {
+    const socket = io(API_URL, {
+      transports: ["websocket"],
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+    });
+
+    socketRef.current = socket;
+
+    socket.on("connect", () => {
+      console.log("✅ Socket conectado:", socket.id);
+      socket.emit("join", currentUser.id);
+    });
+
+    socket.on("connect_error", (err) => {
+      console.log("❌ erro socket:", err.message);
+    });
+
+    socket.on("disconnect", () => {
+      console.log("⚪ desconectado");
+    });
+
+    socket.on("message", (msg: Message) => {
       console.log("📩 Mensagem recebida:", msg);
 
       const otherUserId =
         msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
       setUsers((prev) => {
-        const userExists = prev.find((u) => u.clerkId === otherUserId);
-        if (userExists) {
+        const exists = prev.find((u) => u.clerkId === otherUserId);
+
+        if (exists) {
           return prev
             .map((u) =>
               u.clerkId === otherUserId
@@ -120,24 +136,22 @@ export default function ConversationsScreen() {
       ) {
         setMessages((prev) => [...prev, msg]);
       }
-    };
+    });
 
-    socket.on("message", handleMessage);
-    socket.on("connect_error", (err) => logError("Erro Socket.IO", err));
-    return () => socket.off("message", handleMessage);
+    return () => {
+      socket.disconnect();
+    };
   }, [currentUser, selectedUser]);
 
-  // Carrega histórico de usuários
+  /* ================= LOAD USERS ================= */
   const loadUsers = useCallback(async () => {
     if (!currentUser) return;
-    console.log("🔄 Carregando usuários...");
 
     try {
       const res = await fetch(`${API_URL}/users?exclude=${currentUser.id}`);
       if (!res.ok) return logError("Erro ao buscar usuários", null, res);
 
       const data: User[] = await res.json();
-      console.log("✅ Usuários carregados:", data.length);
 
       const usersWithLast = await Promise.all(
         data.map(async (user) => {
@@ -145,7 +159,8 @@ export default function ConversationsScreen() {
             const resMsg = await fetch(
               `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
             );
-            if (!resMsg.ok) return logError(`Erro mensagens ${user.username}`, null, resMsg);
+            if (!resMsg.ok)
+              return logError(`Erro mensagens ${user.username}`, null, resMsg);
 
             const msgs: Message[] = await resMsg.json();
             const last = msgs[msgs.length - 1];
@@ -167,8 +182,12 @@ export default function ConversationsScreen() {
         usersWithLast
           .filter((u) => u.messages && u.messages.length > 0)
           .sort((a, b) => {
-            const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-            const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+            const aTime = a.lastMessage
+              ? new Date(a.lastMessage.createdAt).getTime()
+              : 0;
+            const bTime = b.lastMessage
+              ? new Date(b.lastMessage.createdAt).getTime()
+              : 0;
             return bTime - aTime;
           })
       );
@@ -179,6 +198,7 @@ export default function ConversationsScreen() {
 
   const loadMessages = async (user: User) => {
     if (!currentUser) return;
+
     try {
       const res = await fetch(
         `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
@@ -186,7 +206,6 @@ export default function ConversationsScreen() {
       if (!res.ok) return logError("Erro ao buscar mensagens", null, res);
 
       const data: Message[] = await res.json();
-      console.log(`📥 Mensagens carregadas para ${user.username}:`, data.length);
       setMessages(data);
     } catch (err) {
       logError("Erro loadMessages", err);
@@ -208,8 +227,9 @@ export default function ConversationsScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+
       if (!res.ok) return logError("Erro ao enviar mensagem", null, res);
-      console.log("📤 Mensagem enviada:", body);
+
       setInputText("");
     } catch (err) {
       logError("Erro sendMessage", err);
@@ -223,7 +243,6 @@ export default function ConversationsScreen() {
   );
 
   const openChat = (user: User) => {
-    console.log("💬 Abrindo chat com:", user.username);
     setSelectedUser(user);
     setChatVisible(true);
 
@@ -241,15 +260,18 @@ export default function ConversationsScreen() {
   };
 
   const getDisplayName = (user: User | null) =>
-    user?.displayName || user?.username || currentUser?.fullName || "Usuário";
+    user?.displayName || user?.username || "Usuário";
 
   const getAvatar = (user: User | null) =>
-    user?.avatar || currentUser?.profileImageUrl || null;
+    user?.avatar || null;
 
   return (
     <View style={styles.container}>
       <Text
-        style={[styles.headerTitle, { paddingTop: insets.top + 20, paddingHorizontal: 16 }]}
+        style={[
+          styles.headerTitle,
+          { paddingTop: insets.top + 20, paddingHorizontal: 16 },
+        ]}
       >
         Mensagens
       </Text>
@@ -264,12 +286,16 @@ export default function ConversationsScreen() {
               onPress={() => openChat(item)}
             >
               {getAvatar(item) ? (
-                <Image source={{ uri: getAvatar(item) }} style={styles.avatar} />
+                <Image
+                  source={{ uri: getAvatar(item)! }}
+                  style={styles.avatar}
+                />
               ) : (
                 <View style={styles.avatarPlaceholder}>
                   <Feather name="user" size={22} color="#999" />
                 </View>
               )}
+
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{getDisplayName(item)}</Text>
                 {item.lastMessage && (
@@ -283,7 +309,6 @@ export default function ConversationsScreen() {
         )}
       />
 
-      {/* Modal do Chat */}
       <Modal visible={chatVisible} animationType="slide">
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -294,11 +319,9 @@ export default function ConversationsScreen() {
               <Feather name="arrow-left" size={20} />
             </TouchableOpacity>
 
-            {selectedUser && getAvatar(selectedUser) && (
-              <Image source={{ uri: getAvatar(selectedUser) }} style={styles.avatar} />
-            )}
-
-            <Text style={styles.chatTitle}>{getDisplayName(selectedUser)}</Text>
+            <Text style={styles.chatTitle}>
+              {getDisplayName(selectedUser)}
+            </Text>
           </View>
 
           <FlatList
@@ -311,6 +334,7 @@ export default function ConversationsScreen() {
             }
             renderItem={({ item }) => {
               const isMe = item.senderId === currentUser?.id;
+
               return (
                 <View
                   style={[
@@ -321,7 +345,9 @@ export default function ConversationsScreen() {
                     },
                   ]}
                 >
-                  <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.content}</Text>
+                  <Text style={{ color: isMe ? "#fff" : "#000" }}>
+                    {item.content}
+                  </Text>
                 </View>
               );
             }}
@@ -368,8 +394,23 @@ const styles = StyleSheet.create({
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
   chatTitle: { marginLeft: 10, fontWeight: "700", fontSize: 16 },
-  bubble: { padding: 12, borderRadius: 16, marginBottom: 8, maxWidth: "90%" },
+  bubble: {
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 8,
+    maxWidth: "90%",
+  },
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
-  input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
-  send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+  },
+  send: {
+    backgroundColor: "#000",
+    borderRadius: 20,
+    padding: 10,
+    marginLeft: 8,
+  },
 });

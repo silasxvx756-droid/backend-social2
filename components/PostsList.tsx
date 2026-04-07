@@ -1,11 +1,10 @@
 // PostsList.tsx
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   FlatList,
   View,
   TouchableOpacity,
   Text,
-  Image,
   ActivityIndicator,
   StyleSheet,
   SafeAreaView,
@@ -15,6 +14,7 @@ import {
   Modal,
   TextInput,
 } from "react-native";
+import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
 import { useUser } from "@clerk/clerk-expo";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,31 +23,58 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 const API_URL = "https://backend-social-app-1.onrender.com";
 const { width } = Dimensions.get("window");
 
-// Componente de anúncio com imagem local
-const AdItem = () => (
-  <View style={styles.adContainer}>
-    <Text style={styles.adLabel}>Patrocinado</Text>
-    <View style={styles.adBox}>
-      <Image
-        source={require("../assets/images/propaganda.png")} // caminho relativo ao PostsList.tsx
-        style={{ width: "100%", height: "100%", borderRadius: 12 }}
-        resizeMode="cover"
-      />
-      <View
-        style={{
-          position: "absolute",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <Text style={{ fontWeight: "700", color: "#000" }}>Seu anúncio aqui</Text>
-        <Text style={{ fontSize: 12, color: "#555" }}>
-          Venda produtos ou serviços
-        </Text>
+// ID da postagem que será propaganda
+const AD_POST_ID = "69d4cec46935552434b0556b";
+
+// 🔥 ANÚNCIO OTIMIZADO
+const AdItem = React.memo(({ post, navigation }: any) => {
+  if (!post) return null;
+
+  return (
+    <View style={styles.adContainer}>
+      <View style={styles.postCard}>
+        <View style={styles.contentPadding}>
+          <View style={styles.postHeader}>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate("UserProfile", { userId: post.actor.id })
+              }
+            >
+              <Image
+                source={{ uri: post.actor.avatar }}
+                style={styles.postAvatar}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.nameRowHorizontal}>
+              <Text style={styles.postUsername}>
+                {post.actor.displayName}
+              </Text>
+              <Text style={styles.postTimeHorizontal}>
+                {post.createdAt
+                  ? new Date(post.createdAt).toLocaleDateString()
+                  : ""}
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {post.image && (
+          <Image
+            source={{ uri: post.image }}
+            style={styles.postImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        )}
+
+        <View style={styles.contentPadding}>
+          {post.content && <Text style={{ marginTop: 6 }}>{post.content}</Text>}
+        </View>
       </View>
     </View>
-  </View>
-);
+  );
+});
 
 export default function PostsList({
   username,
@@ -82,7 +109,6 @@ export default function PostsList({
     avatar: user?.imageUrl,
   };
 
-  // Formata tempo
   const formatTime = (date: string) => {
     if (!date) return "";
     const now = new Date();
@@ -95,12 +121,12 @@ export default function PostsList({
     return past.toLocaleDateString();
   };
 
-  // FETCH POSTS
   const fetchPosts = async () => {
     try {
       setLoading(true);
       const res = await fetch(`${API_URL}/posts`);
       const data = await res.json();
+
       const filtered = username
         ? data.filter((p: any) => p.actor?.id === username)
         : data;
@@ -126,14 +152,14 @@ export default function PostsList({
   };
 
   useFocusEffect(
-    React.useCallback(() => {
-      fetchPosts();
+    useCallback(() => {
+      if (!posts.length) fetchPosts();
     }, [username])
   );
 
-  // PICK IMAGE
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const { status } =
+      await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -151,11 +177,12 @@ export default function PostsList({
     }
   };
 
-  // CREATE POST
   const handleCreatePost = async () => {
     if (!content.trim() && !image) return;
+
     try {
       setPosting(true);
+
       const form = new FormData();
       form.append("title", "Post");
       form.append("content", content);
@@ -164,6 +191,7 @@ export default function PostsList({
       if (image) {
         const uriParts = image.uri.split(".");
         const fileType = uriParts[uriParts.length - 1];
+
         form.append("image", {
           uri: image.uri,
           name: `photo.${fileType}`,
@@ -178,6 +206,7 @@ export default function PostsList({
 
       const newPost = await res.json();
       const newPosts = [newPost, ...posts];
+
       setPosts(newPosts);
       setModalVisible(false);
       setContent("");
@@ -191,9 +220,9 @@ export default function PostsList({
     }
   };
 
-  // LIKE
   const handleLike = async (postId: string) => {
     if (likingPostId) return;
+
     setLikingPostId(postId);
 
     setPosts((prev) =>
@@ -211,27 +240,11 @@ export default function PostsList({
     );
 
     try {
-      const res = await fetch(`${API_URL}/posts/${postId}/like`, {
+      await fetch(`${API_URL}/posts/${postId}/like`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ user: currentUser }),
       });
-      const updated = await res.json();
-
-      const updatedPosts = posts.map((p) =>
-        p._id === postId
-          ? {
-              ...p,
-              likes: updated.likes,
-              likedByMe: updated.likes.some(
-                (u: any) => u.id === currentUser.id
-              ),
-            }
-          : p
-      );
-
-      setPosts(updatedPosts);
-      if (onPostAction) onPostAction(updatedPosts);
     } catch {
       fetchPosts();
     } finally {
@@ -239,29 +252,29 @@ export default function PostsList({
     }
   };
 
-  // DELETE POST
   const handleDeletePost = async (postId: string) => {
-    Alert.alert("Apagar postagem", "Tem certeza que deseja apagar?", [
+    Alert.alert("Apagar postagem", "Tem certeza?", [
       { text: "Cancelar", style: "cancel" },
       {
         text: "Apagar",
         style: "destructive",
         onPress: async () => {
           try {
-            await fetch(`${API_URL}/posts/${postId}`, { method: "DELETE" });
+            await fetch(`${API_URL}/posts/${postId}`, {
+              method: "DELETE",
+            });
+
             const updatedPosts = posts.filter((p) => p._id !== postId);
             setPosts(updatedPosts);
             if (onPostAction) onPostAction(updatedPosts);
           } catch {
-            Alert.alert("Erro ao apagar postagem");
-            fetchPosts();
+            Alert.alert("Erro ao apagar");
           }
         },
       },
     ]);
   };
 
-  // COMMENTS
   const openComments = (post: any) => {
     setSelectedPost(post);
     setComments(post.comments || []);
@@ -270,6 +283,7 @@ export default function PostsList({
 
   const handleComment = async () => {
     if (!commentText.trim() || !selectedPost) return;
+
     try {
       const res = await fetch(
         `${API_URL}/posts/${selectedPost._id}/comments`,
@@ -281,64 +295,116 @@ export default function PostsList({
       );
 
       const newComment = await res.json();
-      const updatedPosts = posts.map((p) =>
-        p._id === selectedPost._id
-          ? { ...p, comments: [...(p.comments || []), newComment] }
-          : p
-      );
 
       setComments((prev) => [...prev, newComment]);
-      setPosts(updatedPosts);
       setCommentText("");
-      if (onPostAction) onPostAction(updatedPosts);
     } catch {
       Alert.alert("Erro ao comentar");
     }
   };
 
-  const handleDeleteComment = async (commentId: string) => {
-    if (!selectedPost) return;
+  const adPost = posts.find((p) => p._id === AD_POST_ID);
 
-    Alert.alert("Apagar comentário", "Deseja apagar?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Apagar",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            const updatedPosts = posts.map((p) =>
-              p._id === selectedPost._id
-                ? {
-                    ...p,
-                    comments: p.comments.filter((c) => c._id !== commentId),
-                  }
-                : p
-            );
+  const mixedData = useMemo(() => {
+    return posts.flatMap((post, index) =>
+      (index + 1) % 5 === 0 && adPost
+        ? [post, { type: "ad", ...adPost }]
+        : [post]
+    );
+  }, [posts, adPost]);
 
-            setComments((prev) =>
-              prev.filter((c) => c._id !== commentId)
-            );
-            setPosts(updatedPosts);
+  const renderItem = ({ item }: any) => {
+    if (item.type === "ad")
+      return <AdItem post={item} navigation={navigation} />;
 
-            await fetch(
-              `${API_URL}/posts/${selectedPost._id}/comments/${commentId}`,
-              { method: "DELETE" }
-            );
+    const displayName =
+      item.actor?.id === currentUser.id
+        ? currentUser.displayName
+        : item.actor?.displayName;
 
-            if (onPostAction) onPostAction(updatedPosts);
-          } catch {
-            Alert.alert("Erro ao apagar comentário");
-            fetchPosts();
-          }
-        },
-      },
-    ]);
+    return (
+      <View style={styles.postCard}>
+        <View style={styles.contentPadding}>
+          <View style={styles.postHeader}>
+            <TouchableOpacity
+              onPress={() =>
+                navigation.navigate("UserProfile", {
+                  userId: item.actor?.id,
+                })
+              }
+            >
+              <Image
+                source={{ uri: item.actor?.avatar }}
+                style={styles.postAvatar}
+              />
+            </TouchableOpacity>
+
+            <View style={styles.nameRowHorizontal}>
+              <Text style={styles.postUsername}>{displayName}</Text>
+              <Text style={styles.postTimeHorizontal}>
+                {formatTime(item.createdAt)}
+              </Text>
+            </View>
+
+            {item.actor?.id === currentUser.id && (
+              <TouchableOpacity
+                onPress={() => handleDeletePost(item._id)}
+                style={{ marginLeft: "auto" }}
+              >
+                <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {item.image && (
+          <Image
+            source={{ uri: item.image }}
+            style={styles.postImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
+        )}
+
+        <View style={styles.contentPadding}>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => handleLike(item._id)}
+            >
+              <Ionicons
+                name={item.likedByMe ? "heart" : "heart-outline"}
+                size={22}
+                color={item.likedByMe ? "#ff3040" : "#222"}
+              />
+              <Text style={styles.count}>
+                {item.likes?.length || 0}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionBtn}
+              onPress={() => openComments(item)}
+            >
+              <Ionicons name="chatbubble-outline" size={20} />
+              <Text style={styles.count}>
+                {item.comments?.length || 0}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {item.content?.trim().length > 0 && (
+            <Text style={{ marginTop: 6 }}>
+              <Text style={{ fontWeight: "600" }}>
+                {displayName}{" "}
+              </Text>
+              {item.content}
+            </Text>
+          )}
+        </View>
+      </View>
+    );
   };
-
-  // 🔥 MISTURA POSTS + ADS
-  const mixedData = posts.flatMap((post, index) =>
-    (index + 1) % 4 === 0 ? [post, { type: "ad", id: `ad-${index}` }] : post
-  );
 
   if (loading)
     return <ActivityIndicator size="large" style={{ marginTop: 20 }} />;
@@ -349,7 +415,9 @@ export default function PostsList({
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() =>
-              navigation.navigate("PostCreate", { onPostCreated: fetchPosts })
+              navigation.navigate("PostCreate", {
+                onPostCreated: fetchPosts,
+              })
             }
           >
             <Ionicons name="add" size={32} />
@@ -360,98 +428,20 @@ export default function PostsList({
       <FlatList
         data={mixedData}
         keyExtractor={(item: any, index) =>
-          item.type === "ad" ? item.id : item._id || item.id || index.toString()
+          item._id || item.id || index.toString()
         }
+        renderItem={renderItem}
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        removeClippedSubviews
+        updateCellsBatchingPeriod={50}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        renderItem={({ item }: any) => {
-          if (item.type === "ad") return <AdItem />;
-
-          const displayName =
-            item.actor?.id === currentUser.id
-              ? currentUser.displayName
-              : item.actor?.displayName;
-
-          return (
-            <View style={styles.postCard}>
-              <View style={styles.contentPadding}>
-                <View style={styles.postHeader}>
-                  <TouchableOpacity
-                    onPress={() =>
-                      navigation.navigate("UserProfile", {
-                        userId: item.actor?.id,
-                      })
-                    }
-                  >
-                    <Image
-                      source={{ uri: item.actor?.avatar }}
-                      style={styles.postAvatar}
-                    />
-                  </TouchableOpacity>
-
-                  <View style={styles.nameRowHorizontal}>
-                    <Text style={styles.postUsername}>{displayName}</Text>
-                    <Text style={styles.postTimeHorizontal}>
-                      {formatTime(item.createdAt)}
-                    </Text>
-                  </View>
-
-                  {item.actor?.id === currentUser.id && (
-                    <TouchableOpacity
-                      onPress={() => handleDeletePost(item._id)}
-                      style={{ marginLeft: "auto" }}
-                    >
-                      <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {item.image && (
-                <Image source={{ uri: item.image }} style={styles.postImage} />
-              )}
-
-              <View style={styles.contentPadding}>
-                <View style={styles.actionsRow}>
-                  <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => handleLike(item._id)}
-                  >
-                    <Ionicons
-                      name={item.likedByMe ? "heart" : "heart-outline"}
-                      size={22}
-                      color={item.likedByMe ? "#ff3040" : "#222"}
-                    />
-                    <Text style={styles.count}>
-                      {item.likes?.length || 0}
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => openComments(item)}
-                  >
-                    <Ionicons name="chatbubble-outline" size={20} />
-                    <Text style={styles.count}>
-                      {item.comments?.length || 0}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {item.content?.trim().length > 0 && (
-                  <Text style={{ marginTop: 6 }}>
-                    <Text style={{ fontWeight: "600" }}>{displayName} </Text>
-                    {item.content}
-                  </Text>
-                )}
-              </View>
-            </View>
-          );
-        }}
       />
 
-      {/* MODAL COMENTÁRIOS */}
       <Modal visible={commentsModal} animationType="slide">
         <SafeAreaView style={{ flex: 1 }}>
           <View style={{ flex: 1, padding: 16 }}>
@@ -467,42 +457,17 @@ export default function PostsList({
               keyExtractor={(item) => item._id}
               renderItem={({ item }) => {
                 const isMyComment = item.user.id === currentUser.id;
-                const displayName = isMyComment
-                  ? currentUser.displayName
-                  : item.user.displayName;
-                const avatarUri = isMyComment
-                  ? currentUser.avatar
-                  : item.user.avatar;
 
                 return (
                   <View style={{ flexDirection: "row", marginBottom: 12 }}>
                     <Image
-                      source={{ uri: avatarUri }}
+                      source={{ uri: item.user.avatar }}
                       style={styles.commentAvatar}
                     />
                     <View style={{ flex: 1, marginLeft: 8 }}>
-                      <View
-                        style={{
-                          flexDirection: "row",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <View style={{ flexDirection: "row", gap: 6 }}>
-                          <Text style={{ fontWeight: "700" }}>{displayName}</Text>
-                          <Text style={{ fontSize: 12, color: "#555" }}>
-                            {formatTime(item.createdAt)}
-                          </Text>
-                        </View>
-
-                        {isMyComment && (
-                          <TouchableOpacity
-                            onPress={() => handleDeleteComment(item._id)}
-                          >
-                            <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-
+                      <Text style={{ fontWeight: "700" }}>
+                        {item.user.displayName}
+                      </Text>
                       <Text>{item.text}</Text>
                     </View>
                   </View>
@@ -549,44 +514,30 @@ const styles = StyleSheet.create({
   postUsername: { fontWeight: "700", fontSize: 14 },
   postTimeHorizontal: { fontSize: 12, color: "#555" },
   postImage: { width: "100%", height: width, marginVertical: 8 },
-  contentPadding: { paddingHorizontal: 12, paddingVertical: 6 },
+  contentPadding: { padding: 12 },
   actionsRow: { flexDirection: "row", marginTop: 6, gap: 16 },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
-  count: { fontSize: 13, color: "#333" },
+  actionBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
+  count: { fontSize: 12 },
 
-  // COMMENTS
+  adContainer: {
+    padding: 0,
+    marginBottom: 16,
+    backgroundColor: "#fff",
+  },
+
   commentsHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     marginBottom: 12,
   },
-  commentsTitle: { fontSize: 18, fontWeight: "700" },
+  commentsTitle: { fontWeight: "700", fontSize: 18 },
   commentAvatar: { width: 32, height: 32, borderRadius: 16 },
   input: {
     flex: 1,
     borderWidth: 1,
+    borderColor: "#ccc",
     borderRadius: 20,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderColor: "#ccc",
-  },
-
-  // ADS
-  adContainer: {
-    padding: 12,
-    backgroundColor: "#fff",
-    marginBottom: 16,
-  },
-  adLabel: {
-    fontSize: 12,
-    color: "#888",
-    marginBottom: 6,
-  },
-  adBox: {
-    height: 120,
-    borderRadius: 12,
-    backgroundColor: "#f1f1f1",
-    justifyContent: "center",
-    alignItems: "center",
+    height: 40,
   },
 });

@@ -9,7 +9,6 @@ import {
   Platform,
   Dimensions,
   SafeAreaView,
-  KeyboardAvoidingView,
   ScrollView,
 } from "react-native";
 import { useRouter } from "expo-router";
@@ -22,7 +21,7 @@ export default function Index() {
   const { user } = useUser();
   const router = useRouter();
 
-  const { width } = Dimensions.get("window");
+  const { width, height } = Dimensions.get("window");
   const isDesktop = width > 768;
 
   const LOGO_SIZE = isDesktop ? 140 : 180;
@@ -70,134 +69,130 @@ export default function Index() {
 
   return (
     <SafeAreaView className="flex-1 bg-white dark:bg-white">
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        className="flex-1"
+      <ScrollView
+        contentContainerStyle={{
+          minHeight: height,
+          justifyContent: "center",
+          alignItems: "center",
+          paddingVertical: 40,
+          paddingBottom: 60,
+        }}
+        className="bg-white dark:bg-white"
+        keyboardShouldPersistTaps="handled"
       >
-        <ScrollView
-          contentContainerStyle={{
-            flexGrow: 1,
-            justifyContent: "center",
-            alignItems: "center",
-            paddingVertical: 40,
-            paddingBottom: 60,
+        <View
+          style={{
+            width: "100%",
+            maxWidth: 900,
+            flexDirection: isDesktop ? "row" : "column",
+            borderRadius: 24,
+            overflow: "hidden",
           }}
-          className="bg-white dark:bg-white"
         >
+          {/* LADO ESQUERDO */}
           <View
             style={{
-              width: "100%",
-              maxWidth: 900,
-              flexDirection: isDesktop ? "row" : "column",
-              borderRadius: 24,
-              overflow: "hidden",
+              flex: 1,
+              padding: isDesktop ? 40 : 20,
+              justifyContent: "center",
+              alignItems: "center",
             }}
           >
-            {/* LADO ESQUERDO */}
+            {/* LOGO */}
+            <View className="items-center mb-10">
+              <Image
+                source={require("../../assets/images/logo1.png")}
+                style={{ width: LOGO_SIZE, height: LOGO_SIZE }}
+                resizeMode="contain"
+              />
+            </View>
+
+            {/* BOTÕES SOCIAIS */}
+            <View
+              style={{
+                width: isDesktop ? 400 : "100%",
+              }}
+              className="gap-3"
+            >
+              {/* Google */}
+              <Pressable
+                onPress={() => handleLogin("oauth_google")}
+                disabled={isSocialLoading}
+                onMouseEnter={() => isDesktop && setHoverGoogle(true)}
+                onMouseLeave={() => isDesktop && setHoverGoogle(false)}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  height: isDesktop ? 36 : 48,
+                  borderRadius: 9999,
+                  width: "100%",
+                  borderWidth: 2,
+                  borderColor: GRAY_BORDER,
+                  backgroundColor: hoverGoogle ? LIGHT_GRAY_BG : "transparent",
+                  paddingHorizontal: 16,
+                }}
+              >
+                {isSocialLoading ? (
+                  <ActivityIndicator color="#9CA3AF" />
+                ) : (
+                  <>
+                    <Image
+                      source={require("../../assets/images/google.png")}
+                      style={{ width: 18, height: 18 }}
+                      resizeMode="contain"
+                    />
+
+                    <View style={{ flex: 1, alignItems: "center" }}>
+                      <Text className="text-black font-semibold text-base">
+                        Continuar com Google
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </View>
+
+          {/* LADO DIREITO DESKTOP */}
+          {isDesktop && (
             <View
               style={{
                 flex: 1,
-                padding: isDesktop ? 40 : 20,
                 justifyContent: "center",
                 alignItems: "center",
+                padding: 40,
               }}
             >
-              {/* LOGO */}
-              <View className="items-center mb-10">
-                <Image
-                  source={require("../../assets/images/logo1.png")}
-                  style={{ width: LOGO_SIZE, height: LOGO_SIZE }}
-                  resizeMode="contain"
-                />
-              </View>
+              <Text className="text-4xl font-bold text-gray-800 mb-4 text-center">
+                Conecte-se. Crie. Inspire.
+              </Text>
 
-              {/* BOTÕES SOCIAIS */}
-              <View
+              <Text className="text-lg text-gray-600 mb-6 text-center">
+                Entre para nossa comunidade e compartilhe suas ideias com o
+                mundo. Experimente recursos exclusivos e colaboração em tempo
+                real.
+              </Text>
+
+              <Pressable
+                onPress={() => router.push("/(auth)/register-email")}
+                onMouseEnter={() => setHoverComece(true)}
+                onMouseLeave={() => setHoverComece(false)}
                 style={{
-                  width: isDesktop ? 400 : "100%",
-                }}
-                className="gap-3"
-              >
-                {/* Google */}
-                <Pressable
-                  onPress={() => handleLogin("oauth_google")}
-                  disabled={isSocialLoading}
-                  onMouseEnter={() => isDesktop && setHoverGoogle(true)}
-                  onMouseLeave={() => isDesktop && setHoverGoogle(false)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    height: isDesktop ? 36 : 48,
-                    borderRadius: 9999,
-                    width: "100%",
-                    borderWidth: 2,
-                    borderColor: GRAY_BORDER,
-                    backgroundColor: hoverGoogle ? LIGHT_GRAY_BG : "transparent",
-                    paddingHorizontal: 16,
-                  }}
-                >
-                  {isSocialLoading ? (
-                    <ActivityIndicator color="#9CA3AF" />
-                  ) : (
-                    <>
-                      <Image
-                        source={require("../../assets/images/google.png")}
-                        style={{ width: 18, height: 18 }}
-                        resizeMode="contain"
-                      />
-
-                      <View style={{ flex: 1, alignItems: "center" }}>
-                        <Text className="text-black font-semibold text-base">
-                          Continuar com Google
-                        </Text>
-                      </View>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-
-            {/* LADO DIREITO DESKTOP */}
-            {isDesktop && (
-              <View
-                style={{
-                  flex: 1,
-                  justifyContent: "center",
+                  backgroundColor: hoverComece ? THEME_BLUE_HOVER : THEME_BLUE,
+                  paddingVertical: 12,
+                  paddingHorizontal: 24,
+                  borderRadius: 9999,
                   alignItems: "center",
-                  padding: 40,
                 }}
               >
-                <Text className="text-4xl font-bold text-gray-800 mb-4 text-center">
-                  Conecte-se. Crie. Inspire.
+                <Text className="text-white font-semibold text-base text-center">
+                  Comece agora
                 </Text>
-
-                <Text className="text-lg text-gray-600 mb-6 text-center">
-                  Entre para nossa comunidade e compartilhe suas ideias com o
-                  mundo. Experimente recursos exclusivos e colaboração em tempo
-                  real.
-                </Text>
-
-                <Pressable
-                  onPress={() => router.push("/(auth)/register-email")}
-                  onMouseEnter={() => setHoverComece(true)}
-                  onMouseLeave={() => setHoverComece(false)}
-                  style={{
-                    backgroundColor: hoverComece ? THEME_BLUE_HOVER : THEME_BLUE,
-                    paddingVertical: 12,
-                    paddingHorizontal: 24,
-                    borderRadius: 9999,
-                    alignItems: "center",
-                  }}
-                >
-                  <Text className="text-white font-semibold text-base text-center">
-                    Comece agora
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }

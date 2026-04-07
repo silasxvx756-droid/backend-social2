@@ -54,7 +54,8 @@ export default function NotificationsScreen() {
     try {
       const res = await axios.get(`${API_URL}/api/notifications/${user.id}`);
       setNotifications(res.data);
-      if (scrollRef.current) scrollRef.current.scrollTo({ y: 0, animated: true });
+      if (scrollRef.current)
+        scrollRef.current.scrollTo({ y: 0, animated: true });
     } catch (err) {
       console.error(err);
     } finally {
@@ -70,12 +71,21 @@ export default function NotificationsScreen() {
 
   useEffect(() => {
     const s = io(API_URL);
+
     if (user?.id) s.emit("join", user.id);
 
+    // ✅ NOVO: receber notificação em tempo real
+    s.on("new-notification", (notification) => {
+      setNotifications((prev) => [notification, ...prev]);
+    });
+
+    // existente
     s.on("notification-updated", ({ notificationId, actor }) => {
       setNotifications((prev) =>
         prev.map((n) =>
-          n._id === notificationId ? { ...n, actor: { ...n.actor, ...actor } } : n
+          n._id === notificationId
+            ? { ...n, actor: { ...n.actor, ...actor } }
+            : n
         )
       );
     });
@@ -117,8 +127,10 @@ export default function NotificationsScreen() {
   };
 
   const renderItem = (item: Notification) => {
-    const actor = item.actor?.id === user?.id ? getCurrentUser() : item.actor;
-    const actorName = actor?.displayName || actor?.username || "Alguém";
+    const actor =
+      item.actor?.id === user?.id ? getCurrentUser() : item.actor;
+    const actorName =
+      actor?.displayName || actor?.username || "Alguém";
 
     return (
       <TouchableOpacity
@@ -140,7 +152,9 @@ export default function NotificationsScreen() {
             {item.type === "post" && "criou um post"}
           </Text>
 
-          <Text style={styles.time}>{getTimeAgo(item.createdAt)}</Text>
+          <Text style={styles.time}>
+            {getTimeAgo(item.createdAt)}
+          </Text>
         </View>
 
         {!item.read && <View style={styles.dot} />}

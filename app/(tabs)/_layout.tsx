@@ -13,8 +13,9 @@ const API_URL = "https://backend-social-app-1.onrender.com";
 
 const TabsLayout = () => {
   // ------------------- CLERK / USER -------------------
-  const { isSignedIn, isLoaded } = useAuth();
-  const { user } = useUser();
+  const { isSignedIn, isLoaded, getToken } = useAuth();
+  const { user, isLoaded: userLoaded } = useUser();
+
   useUserSync(); // sincroniza dados do usuário
 
   // ------------------- HOOKS -------------------
@@ -28,6 +29,7 @@ const TabsLayout = () => {
   useEffect(() => {
     const showSub = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
     const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
+
     return () => {
       showSub.remove();
       hideSub.remove();
@@ -37,40 +39,62 @@ const TabsLayout = () => {
   // ------------------- CHECK NOVAS MENSAGENS -------------------
   const checkNewMessages = async () => {
     if (!user?.id) return;
+
     try {
-      const res = await axios.get(`${API_URL}/api/messages/unread/${user.id}`);
+      const token = await getToken();
+
+      const res = await axios.get(
+        `${API_URL}/api/messages/unread/${user.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
       setHasNewMessages(res.data.unreadCount > 0);
     } catch (err) {
       console.error("Erro ao buscar mensagens não lidas:", err);
     }
   };
 
+  // ------------------- INTERVAL SEGURO -------------------
   useEffect(() => {
-    const interval = setInterval(() => checkNewMessages(), 5000);
-    checkNewMessages(); // fetch inicial
+    if (!user?.id) return;
+
+    const interval = setInterval(() => {
+      checkNewMessages();
+    }, 5000);
+
+    checkNewMessages();
+
     return () => clearInterval(interval);
   }, [user?.id]);
 
-  // reseta ponto vermelho ao entrar na aba de mensagens
+  // ------------------- RESET NOTIF AO ENTRAR -------------------
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => setHasNewMessages(false));
+    const unsubscribe = navigation.addListener("focus", () => {
+      setHasNewMessages(false);
+    });
+
     return () => unsubscribe();
   }, [navigation]);
 
-  // ------------------- RENDER LOADING / REDIRECT -------------------
-  if (!isLoaded) {
+  // ------------------- LOADING -------------------
+  if (!isLoaded || !userLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator />
+        <ActivityIndicator size="large" color="#000" />
       </View>
     );
   }
 
+  // ------------------- REDIRECT -------------------
   if (!isSignedIn) {
     return <Redirect href="/(auth)/login" />;
   }
 
-  const backgroundColor = "#FFF"; // cor fixa sem dark mode
+  const backgroundColor = "#FFF";
 
   // ------------------- TABS -------------------
   return (
@@ -103,7 +127,14 @@ const TabsLayout = () => {
                 />
               );
             }
-            return <Ionicons name="person-outline" size={24} color={focused ? "#000" : color} />;
+
+            return (
+              <Ionicons
+                name="person-outline"
+                size={24}
+                color={focused ? "#000" : color}
+              />
+            );
           }
 
           // NOTIFICATIONS
@@ -145,6 +176,7 @@ const TabsLayout = () => {
 
           // OUTROS ICONES
           let iconName = "";
+
           switch (route.name) {
             case "index":
               iconName = focused ? "home" : "home-outline";
@@ -156,7 +188,13 @@ const TabsLayout = () => {
               iconName = "ellipse";
           }
 
-          return <Ionicons name={iconName as any} size={24} color={focused ? "#000" : color} />;
+          return (
+            <Ionicons
+              name={iconName as any}
+              size={24}
+              color={focused ? "#000" : color}
+            />
+          );
         },
       })}
     >
