@@ -13,7 +13,7 @@ import {
   Platform,
   Alert,
 } from "react-native";
-import * as Clipboard from "expo-clipboard"; // ✅ import clipboard
+import * as Clipboard from "expo-clipboard";
 import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
@@ -66,11 +66,8 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
 
     const socket = io(API_URL, {
-      transports: ["websocket"],
+      transports: ["websocket", "polling"], // fallback polling para APK
       secure: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
     });
 
     socketRef.current = socket;
@@ -89,6 +86,8 @@ export default function ConversationsScreen() {
     });
 
     socket.on("message", (msg: Message) => {
+      console.log("📨 Mensagem recebida:", msg);
+
       const otherUserId =
         msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
@@ -359,7 +358,7 @@ export default function ConversationsScreen() {
 
               return (
                 <TouchableOpacity
-                  onPress={() => copyMessage(item.content)} // ✅ copiar ao pressionar
+                  onPress={() => copyMessage(item.content)}
                   style={[
                     styles.bubble,
                     {

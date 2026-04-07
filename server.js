@@ -14,6 +14,8 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
+const SERVER_URL = process.env.SERVER_URL || "http://localhost:5000";
+
 // ================= SOCKET.IO =================
 const io = new Server(server, {
   cors: {
@@ -520,75 +522,30 @@ app.post("/users/:clerkId/update-profile", async (req, res) => {
       n.actor.avatar = avatar;
       await n.save();
 
-      io.to(n.userId).emit("notification-updated", {
-        ...n.toObject(),
-        actor: { id: clerkId, displayName, avatar },
-      });
+      io.to(n.userId).emit("notification", n);
     }
-
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ================= SEARCH ================= */
-app.get("/search", async (req, res) => {
-  try {
-    const { q = "" } = req.query;
-
-    console.log("🔍 /search chamada com query:", q);
-
-    if (!q.trim()) {
-      return res.json({ users: [], posts: [] });
-    }
-
-    // Busca usuários no Clerk
-    let users = [];
-    try {
-      users = await fetchClerkUsers(q);
-    } catch (err) {
-      console.error("❌ Erro ao buscar usuários no Clerk:", err);
-    }
-
-    // Busca posts no MongoDB
-    let posts = [];
-    try {
-      posts = await Post.find({
-        $or: [
-          { title: { $regex: q, $options: "i" } },
-          { content: { $regex: q, $options: "i" } },
-        ],
-      }).sort({ createdAt: -1 });
-    } catch (err) {
-      console.error("❌ Erro ao buscar posts:", err);
-    }
-
-    console.log(`✅ /search retornando ${users.length} usuários e ${posts.length} posts`);
-
-    res.json({ users, posts });
-  } catch (err) {
-    console.error("❌ Erro geral /search:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ================= SOCKET.IO ================= */
+/* ================= SOCKET.IO EVENTS ================= */
 io.on("connection", (socket) => {
   console.log("⚡ Socket conectado:", socket.id);
 
   socket.on("join", (userId) => {
     socket.join(userId);
-    console.log(`🟢 Usuário ${userId} entrou na sala`);
+    console.log(`🔹 Usuário ${userId} entrou na sala`);
   });
 
   socket.on("disconnect", () => {
-    console.log("⚪ Socket desconectado:", socket.id);
+    console.log("⚡ Socket desconectado:", socket.id);
   });
 });
 
-/* ================= START SERVER ================= */
+/* ================= SERVER LISTEN ================= */
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`🚀 Servidor rodando em ${SERVER_URL}`);
 });

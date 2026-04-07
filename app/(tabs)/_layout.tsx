@@ -1,11 +1,12 @@
 // TabsLayout.tsx
 import React, { useState, useEffect } from "react";
-import { Image, ActivityIndicator, View, Keyboard } from "react-native";
+import { Image, ActivityIndicator, View, Keyboard, Platform } from "react-native";
 import { Tabs, Redirect, useNavigation } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
+import * as NavigationBar from "expo-navigation-bar";
 
 import { useUserSync } from "../../hooks/useUserSync";
 
@@ -79,6 +80,14 @@ const TabsLayout = () => {
 
     return () => unsubscribe();
   }, [navigation]);
+
+  // ------------------- ANDROID NAVIGATION BAR -------------------
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      NavigationBar.setBackgroundColorAsync("#FFF"); // fundo branco
+      NavigationBar.setButtonStyleAsync("dark"); // ícones escuros
+    }
+  }, []);
 
   // ------------------- LOADING -------------------
   if (!isLoaded || !userLoaded) {
