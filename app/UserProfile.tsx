@@ -20,7 +20,7 @@ import { useRouter } from "expo-router";
 import PostsList from "../components/PostsList";
 import { Ionicons } from "@expo/vector-icons";
 
-const API_URL = "http://192.168.0.103:3000";
+const API_URL = "https://backend-social-app-1.onrender.com";
 
 export default function UserProfile() {
   const { user } = useUser();
