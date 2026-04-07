@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Procuro Job",
+    "slug": "Procuro Job",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon3.png",
