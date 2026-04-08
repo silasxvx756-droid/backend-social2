@@ -1,3 +1,4 @@
+// server.js
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -13,6 +14,7 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
+// ================= SERVER URL =================
 const SERVER_URL = process.env.SERVER_URL || "https://backend-social-app-1.onrender.com";
 
 // ================= SOCKET.IO =================
@@ -108,22 +110,6 @@ const messageSchema = new mongoose.Schema(
 );
 const Message = mongoose.model("Message", messageSchema);
 
-// ================= ROTAS =================
-app.get("/", (req, res) => {
-  console.log("⚡ / rota chamada no Render");
-  res.send("Servidor rodando no Render! 🚀");
-});
-
-// =============== FOLLOW CHECK =================
-app.get("/follow/check", async (req, res) => {
-  try {
-    const { followerId, followingId } = req.query;
-    if (!followerId || !followingId) return res.status(400).json({ error: "IDs obrigatórios" });
-    const exists = await Follow.findOne({ followerId, followingId });
-    res.json({ following: !!exists });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 // ================= HELPERS =================
 const fetchClerkUsers = async (query) => {
   try {
@@ -138,7 +124,10 @@ const fetchClerkUsers = async (query) => {
       displayName: `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username || "User",
       avatar: user.profile_image_url || "",
     }));
-  } catch (err) { console.error("Erro fetchClerkUsers:", err); return []; }
+  } catch (err) {
+    console.error("Erro fetchClerkUsers:", err);
+    return [];
+  }
 };
 
 const fetchClerkUserById = async (clerkId) => {
@@ -154,7 +143,10 @@ const fetchClerkUserById = async (clerkId) => {
       displayName: `${user.first_name || ""} ${user.last_name || ""}`.trim() || user.username || "User",
       avatar: user.profile_image_url || "",
     };
-  } catch (err) { console.error("Erro ao buscar usuário Clerk:", err); return null; }
+  } catch (err) {
+    console.error("Erro ao buscar usuário Clerk:", err);
+    return null;
+  }
 };
 
 // ================= CACHE =================
@@ -167,7 +159,20 @@ const getCachedUser = async (userId) => {
   return freshUser;
 };
 
-// ================= USERS =================
+// ================= ROTAS =================
+app.get("/", (req, res) => res.send("Servidor rodando no Render! 🚀"));
+
+// FOLLOW CHECK
+app.get("/follow/check", async (req, res) => {
+  try {
+    const { followerId, followingId } = req.query;
+    if (!followerId || !followingId) return res.status(400).json({ error: "IDs obrigatórios" });
+    const exists = await Follow.findOne({ followerId, followingId });
+    res.json({ following: !!exists });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// USERS
 app.get("/users", async (req, res) => {
   try {
     const { search = "", exclude } = req.query;
@@ -202,7 +207,7 @@ app.get("/users/:username", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================= FOLLOWERS / FOLLOWING =================
+// FOLLOWERS / FOLLOWING
 app.get("/followers/:clerkId", async (req, res) => {
   try {
     const { clerkId } = req.params;
@@ -221,7 +226,7 @@ app.get("/following/:clerkId", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Erro ao buscar seguindo" }); }
 });
 
-// ================= FOLLOW / UNFOLLOW =================
+// FOLLOW / UNFOLLOW
 app.post("/follow", async (req, res) => {
   try {
     const { followerId, followingId } = req.body;
@@ -230,6 +235,7 @@ app.post("/follow", async (req, res) => {
       await Follow.create({ followerId, followingId });
       await User.updateOne({ id: followingId }, { $inc: { followers: 1 } }, { upsert: true });
       await User.updateOne({ id: followerId }, { $inc: { following: 1 } }, { upsert: true });
+
       const freshFollowerUser = await fetchClerkUserById(followerId);
       if (freshFollowerUser) {
         userCache.set(followerId, { data: freshFollowerUser, timestamp: Date.now() });
@@ -253,7 +259,7 @@ app.post("/unfollow", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================= POSTS =================
+// POSTS
 app.get("/posts", async (req, res) => {
   try {
     const posts = await Post.find().sort({ createdAt: -1 });
@@ -324,7 +330,7 @@ app.post("/posts/:id/comments", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================= MESSAGES =================
+// MESSAGES
 app.get("/messages", async (req, res) => {
   const { user1, user2 } = req.query;
   const msgs = await Message.find({
@@ -345,7 +351,7 @@ app.post("/messages", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================= NOTIFICATIONS =================
+// NOTIFICATIONS
 app.get("/api/notifications/:userId", async (req, res) => {
   const notifications = await Notification.find({ userId: req.params.userId }).sort({ createdAt: -1 });
   const updatedNotifications = await Promise.all(notifications.map(async (n) => {
@@ -369,7 +375,7 @@ app.post("/api/notifications/read-all", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================= UPDATE PROFILE =================
+// UPDATE PROFILE
 app.post("/users/:clerkId/update-profile", async (req, res) => {
   try {
     const { clerkId } = req.params;
@@ -380,13 +386,20 @@ app.post("/users/:clerkId/update-profile", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ================= SOCKET.IO CONNECTION =================
+// SOCKET.IO CONNECTION
 io.on("connection", (socket) => {
   console.log("🔌 Novo socket conectado:", socket.id);
-  socket.on("join", (userId) => { socket.join(userId); console.log(`🟢 User ${userId} entrou na sala.`); });
-  socket.on("disconnect", () => { console.log("⚡ Socket desconectado:", socket.id); });
+
+  socket.on("join", (userId) => {
+    socket.join(userId);
+    console.log(`🟢 User ${userId} entrou na sala.`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("⚡ Socket desconectado:", socket.id);
+  });
 });
 
-// ================= START SERVER =================
+// START SERVER
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Servidor rodando em: ${SERVER_URL}`));
