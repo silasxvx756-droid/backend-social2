@@ -1,4 +1,3 @@
-// ConversationsScreen.tsx
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
@@ -60,7 +59,7 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
 
     const socket = io(API_URL, {
-      transports: ["websocket"],
+      transports: ["websocket"], // força websocket
       reconnection: true,
       reconnectionAttempts: 5,
     });
@@ -85,7 +84,6 @@ export default function ConversationsScreen() {
     socket.on("message", async (msg: Message) => {
       console.log("📨 Mensagem recebida:", msg);
 
-      // evita duplicação
       setMessages((prev) => {
         if (prev.find((m) => m._id === msg._id)) return prev;
         return [...prev, msg];
@@ -189,19 +187,13 @@ export default function ConversationsScreen() {
         })
       );
 
-      // merge (não sobrescreve)
       setUsers((prev) => {
         const merged = [...prev];
-
         usersWithLast.forEach((u) => {
           const index = merged.findIndex((p) => p.clerkId === u.clerkId);
-          if (index >= 0) {
-            merged[index] = { ...merged[index], ...u };
-          } else {
-            merged.push(u);
-          }
+          if (index >= 0) merged[index] = { ...merged[index], ...u };
+          else merged.push(u);
         });
-
         return merged.sort(sortByLastMessage);
       });
     } catch (err) {
@@ -251,7 +243,6 @@ export default function ConversationsScreen() {
       });
 
       const realMsg = await res.json();
-
       setMessages((prev) =>
         prev.map((m) => (m._id === tempMessage._id ? realMsg : m))
       );
@@ -270,16 +261,11 @@ export default function ConversationsScreen() {
     setSelectedUser(user);
     setChatVisible(true);
 
-    if (user.messages?.length) {
-      setMessages(user.messages);
-    } else {
-      loadMessages(user);
-    }
+    if (user.messages?.length) setMessages(user.messages);
+    else loadMessages(user);
 
     setUsers((prev) =>
-      prev.map((u) =>
-        u.clerkId === user.clerkId ? { ...u, unread: false } : u
-      )
+      prev.map((u) => (u.clerkId === user.clerkId ? { ...u, unread: false } : u))
     );
   };
 
@@ -325,6 +311,9 @@ export default function ConversationsScreen() {
       <FlatList
         data={[...displayedUsers].sort(sortByLastMessage)}
         keyExtractor={(i) => i.clerkId}
+        initialNumToRender={20}
+        maxToRenderPerBatch={20}
+        windowSize={10}
         renderItem={({ item }) => (
           <TouchableOpacity
             style={styles.userItem}
@@ -369,8 +358,14 @@ export default function ConversationsScreen() {
             data={messages}
             keyExtractor={(i) => i._id}
             contentContainerStyle={{ padding: 10 }}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={10}
             onContentSizeChange={() =>
-              flatListRef.current?.scrollToEnd({ animated: true })
+              setTimeout(
+                () => flatListRef.current?.scrollToEnd({ animated: true }),
+                50
+              )
             }
             renderItem={({ item }) => {
               const isMe = item.senderId === currentUser?.id;
@@ -414,15 +409,8 @@ export default function ConversationsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
-
-  userItem: {
-    flexDirection: "row",
-    padding: 16,
-    alignItems: "center",
-  },
-
+  userItem: { flexDirection: "row", padding: 16, alignItems: "center" },
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
-
   avatarPlaceholder: {
     width: 50,
     height: 50,
@@ -433,36 +421,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
-
   name: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
-
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
   chatTitle: { marginLeft: 10, fontWeight: "700", fontSize: 16 },
-
-  bubble: {
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 8,
-    maxWidth: "90%",
-  },
-
+  bubble: { padding: 12, borderRadius: 16, marginBottom: 8, maxWidth: "90%" },
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
-
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-  },
-
-  send: {
-    backgroundColor: "#000",
-    borderRadius: 20,
-    padding: 10,
-    marginLeft: 8,
-  },
-
+  input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
+  send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -474,6 +440,5 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     height: 40,
   },
-
   searchInput: { flex: 1, fontSize: 14, marginLeft: 8 },
 });
