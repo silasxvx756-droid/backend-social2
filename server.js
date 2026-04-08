@@ -105,6 +105,7 @@ const messageSchema = new mongoose.Schema(
     senderId: String,
     receiverId: String,
     content: String,
+    read: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -162,7 +163,7 @@ const getCachedUser = async (userId) => {
 // ================= ROTAS =================
 app.get("/", (req, res) => res.send("Servidor rodando no Render! 🚀"));
 
-// FOLLOW CHECK
+// ================= FOLLOW =================
 app.get("/follow/check", async (req, res) => {
   try {
     const { followerId, followingId } = req.query;
@@ -172,7 +173,38 @@ app.get("/follow/check", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// USERS
+app.post("/follow", async (req, res) => {
+  try {
+    const { followerId, followingId } = req.body;
+    const exists = await Follow.findOne({ followerId, followingId });
+    if (!exists) {
+      await Follow.create({ followerId, followingId });
+      await User.updateOne({ id: followingId }, { $inc: { followers: 1 } }, { upsert: true });
+      await User.updateOne({ id: followerId }, { $inc: { following: 1 } }, { upsert: true });
+      const freshFollowerUser = await fetchClerkUserById(followerId);
+      if (freshFollowerUser) {
+        userCache.set(followerId, { data: freshFollowerUser, timestamp: Date.now() });
+        const notification = await Notification.create({ userId: followingId, type: "follow", actor: freshFollowerUser, read: false });
+        io.to(followingId).emit("notification", { ...notification.toObject(), actor: freshFollowerUser });
+      }
+    }
+    res.json({ success: true, following: !exists });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post("/unfollow", async (req, res) => {
+  try {
+    const { followerId, followingId } = req.body;
+    const deleted = await Follow.findOneAndDelete({ followerId, followingId });
+    if (deleted) {
+      await User.updateOne({ id: followingId }, { $inc: { followers: -1 } });
+      await User.updateOne({ id: followerId }, { $inc: { following: -1 } });
+    }
+    res.json({ success: true, following: false });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ================= USERS =================
 app.get("/users", async (req, res) => {
   try {
     const { search = "", exclude } = req.query;
@@ -207,7 +239,6 @@ app.get("/users/:username", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// FOLLOWERS / FOLLOWING
 app.get("/followers/:clerkId", async (req, res) => {
   try {
     const { clerkId } = req.params;
@@ -226,40 +257,17 @@ app.get("/following/:clerkId", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Erro ao buscar seguindo" }); }
 });
 
-// FOLLOW / UNFOLLOW
-app.post("/follow", async (req, res) => {
+app.post("/users/:clerkId/update-profile", async (req, res) => {
   try {
-    const { followerId, followingId } = req.body;
-    const exists = await Follow.findOne({ followerId, followingId });
-    if (!exists) {
-      await Follow.create({ followerId, followingId });
-      await User.updateOne({ id: followingId }, { $inc: { followers: 1 } }, { upsert: true });
-      await User.updateOne({ id: followerId }, { $inc: { following: 1 } }, { upsert: true });
-
-      const freshFollowerUser = await fetchClerkUserById(followerId);
-      if (freshFollowerUser) {
-        userCache.set(followerId, { data: freshFollowerUser, timestamp: Date.now() });
-        const notification = await Notification.create({ userId: followingId, type: "follow", actor: freshFollowerUser, read: false });
-        io.to(followingId).emit("notification", { ...notification.toObject(), actor: freshFollowerUser });
-      }
-    }
-    res.json({ success: true, following: !exists });
+    const { clerkId } = req.params;
+    const { displayName, avatar } = req.body;
+    await User.updateOne({ id: clerkId }, { $set: { displayName, avatar } });
+    await Notification.updateMany({ "actor.id": clerkId }, { $set: { "actor.displayName": displayName, "actor.avatar": avatar } });
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post("/unfollow", async (req, res) => {
-  try {
-    const { followerId, followingId } = req.body;
-    const deleted = await Follow.findOneAndDelete({ followerId, followingId });
-    if (deleted) {
-      await User.updateOne({ id: followingId }, { $inc: { followers: -1 } });
-      await User.updateOne({ id: followerId }, { $inc: { following: -1 } });
-    }
-    res.json({ success: true, following: false });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// POSTS
+// ================= POSTS =================
 app.get("/posts", async (req, res) => {
   try {
     const posts = await Post.find().sort({ createdAt: -1 });
@@ -330,7 +338,7 @@ app.post("/posts/:id/comments", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// MESSAGES
+// ================= MESSAGES =================
 app.get("/messages", async (req, res) => {
   const { user1, user2 } = req.query;
   const msgs = await Message.find({
@@ -342,6 +350,17 @@ app.get("/messages", async (req, res) => {
   res.json(msgs);
 });
 
+app.get("/messages/unread/:userId", async (req, res) => {
+  const { userId } = req.params;
+  const msgs = await Message.find({ receiverId: userId, read: false }).sort({ createdAt: 1 });
+  res.json(msgs);
+});
+
+app.post("/messages/:id/read", async (req, res) => {
+  const msg = await Message.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
+  res.json(msg);
+});
+
 app.post("/messages", async (req, res) => {
   try {
     const msg = await Message.create(req.body);
@@ -351,7 +370,7 @@ app.post("/messages", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// NOTIFICATIONS
+// ================= NOTIFICATIONS =================
 app.get("/api/notifications/:userId", async (req, res) => {
   const notifications = await Notification.find({ userId: req.params.userId }).sort({ createdAt: -1 });
   const updatedNotifications = await Promise.all(notifications.map(async (n) => {
@@ -375,18 +394,7 @@ app.post("/api/notifications/read-all", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// UPDATE PROFILE
-app.post("/users/:clerkId/update-profile", async (req, res) => {
-  try {
-    const { clerkId } = req.params;
-    const { displayName, avatar } = req.body;
-    await User.updateOne({ id: clerkId }, { $set: { displayName, avatar } });
-    await Notification.updateMany({ "actor.id": clerkId }, { $set: { "actor.displayName": displayName, "actor.avatar": avatar } });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// SOCKET.IO CONNECTION
+// ================= SOCKET.IO =================
 io.on("connection", (socket) => {
   console.log("🔌 Novo socket conectado:", socket.id);
 
@@ -400,6 +408,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// START SERVER
+// ================= START SERVER =================
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => console.log(`🚀 Servidor rodando em: ${SERVER_URL}`));
