@@ -14,7 +14,7 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-const SERVER_URL = process.env.SERVER_URL || "http://localhost:5000";
+const SERVER_URL = process.env.SERVER_URL || "https://backend-social-app-1.onrender.com";
 
 // ================= SOCKET.IO =================
 const io = new Server(server, {
