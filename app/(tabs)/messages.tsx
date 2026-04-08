@@ -40,12 +40,6 @@ type User = {
   messages?: Message[];
 };
 
-const logError = (context: string, err?: any, res?: Response) => {
-  console.error("🛑 [ERRO]", context);
-  if (res) console.error("Status:", res.status, res.statusText);
-  if (err) console.error("Detalhes:", err);
-};
-
 export default function ConversationsScreen() {
   const { currentUser } = useCurrentUser();
   const insets = useSafeAreaInsets();
@@ -66,7 +60,7 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
 
     const socket = io(API_URL, {
-      transports: ["websocket", "polling"], // fallback polling para APK
+      transports: ["websocket", "polling"],
       secure: true,
     });
 
@@ -88,13 +82,19 @@ export default function ConversationsScreen() {
     socket.on("message", (msg: Message) => {
       console.log("📨 Mensagem recebida:", msg);
 
+      // Evita duplicata
+      setMessages((prev) => {
+        const exists = prev.find((m) => m._id === msg._id);
+        if (exists) return prev;
+        return [...prev, msg];
+      });
+
       const otherUserId =
         msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
       setUsers((prev) => {
-        const exists = prev.find((u) => u.clerkId === otherUserId);
-
-        if (exists) {
+        const existsUser = prev.find((u) => u.clerkId === otherUserId);
+        if (existsUser) {
           return prev
             .map((u) =>
               u.clerkId === otherUserId
@@ -107,12 +107,8 @@ export default function ConversationsScreen() {
                 : u
             )
             .sort((a, b) => {
-              const aTime = a.lastMessage
-                ? new Date(a.lastMessage.createdAt).getTime()
-                : 0;
-              const bTime = b.lastMessage
-                ? new Date(b.lastMessage.createdAt).getTime()
-                : 0;
+              const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+              const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
               return bTime - aTime;
             });
         } else {
@@ -129,14 +125,6 @@ export default function ConversationsScreen() {
           ];
         }
       });
-
-      if (
-        selectedUser &&
-        (msg.senderId === selectedUser.clerkId ||
-          msg.receiverId === selectedUser.clerkId)
-      ) {
-        setMessages((prev) => [...prev, msg]);
-      }
     });
 
     return () => {
@@ -149,7 +137,7 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
     try {
       const res = await fetch(`${API_URL}/users?exclude=${currentUser.id}`);
-      if (!res.ok) return logError("Erro ao buscar usuários", null, res);
+      if (!res.ok) return console.error("Erro ao buscar usuários", res.status);
 
       const data: User[] = await res.json();
       setAllUsers(data);
@@ -160,8 +148,7 @@ export default function ConversationsScreen() {
             const resMsg = await fetch(
               `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
             );
-            if (!resMsg.ok)
-              return logError(`Erro mensagens ${user.username}`, null, resMsg);
+            if (!resMsg.ok) return console.error("Erro mensagens", user.username);
 
             const msgs: Message[] = await resMsg.json();
             const last = msgs[msgs.length - 1];
@@ -173,7 +160,7 @@ export default function ConversationsScreen() {
               unread: false,
             };
           } catch (err) {
-            logError(`Erro fetch mensagens ${user.username}`, err);
+            console.error("Erro fetch mensagens", user.username, err);
             return { ...user, lastMessage: null, messages: [], unread: false };
           }
         })
@@ -183,17 +170,13 @@ export default function ConversationsScreen() {
         usersWithLast
           .filter((u) => u.lastMessage)
           .sort((a, b) => {
-            const aTime = a.lastMessage
-              ? new Date(a.lastMessage.createdAt).getTime()
-              : 0;
-            const bTime = b.lastMessage
-              ? new Date(b.lastMessage.createdAt).getTime()
-              : 0;
+            const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+            const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
             return bTime - aTime;
           })
       );
     } catch (err) {
-      logError("Erro loadUsers", err);
+      console.error("Erro loadUsers", err);
     }
   }, [currentUser]);
 
@@ -203,36 +186,35 @@ export default function ConversationsScreen() {
       const res = await fetch(
         `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
       );
-      if (!res.ok) return logError("Erro ao buscar mensagens", null, res);
+      if (!res.ok) return console.error("Erro ao buscar mensagens", res.status);
 
       const data: Message[] = await res.json();
       setMessages(data);
     } catch (err) {
-      logError("Erro loadMessages", err);
+      console.error("Erro loadMessages", err);
     }
   };
 
+  /* ================= SEND MESSAGE ================= */
   const sendMessage = async () => {
     if (!currentUser || !selectedUser || !inputText.trim()) return;
 
     const body = {
       senderId: currentUser.id,
       receiverId: selectedUser.clerkId,
-      content: inputText,
+      content: inputText.trim(),
     };
 
+    setInputText(""); // Limpa input antes de enviar
+
     try {
-      const res = await fetch(`${API_URL}/messages`, {
+      await fetch(`${API_URL}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
-      if (!res.ok) return logError("Erro ao enviar mensagem", null, res);
-
-      setInputText("");
     } catch (err) {
-      logError("Erro sendMessage", err);
+      console.error("Erro sendMessage", err);
     }
   };
 
@@ -270,7 +252,7 @@ export default function ConversationsScreen() {
   };
 
   const displayedUsers = searchText
-    ? allUsers.filter(u =>
+    ? allUsers.filter((u) =>
         (u.displayName || u.username)
           .toLowerCase()
           .includes(searchText.toLowerCase())
@@ -280,10 +262,7 @@ export default function ConversationsScreen() {
   return (
     <View style={styles.container}>
       <Text
-        style={[
-          styles.headerTitle,
-          { paddingTop: insets.top + 20, paddingHorizontal: 16 },
-        ]}
+        style={[styles.headerTitle, { paddingTop: insets.top + 20, paddingHorizontal: 16 }]}
       >
         Mensagens
       </Text>
@@ -341,7 +320,6 @@ export default function ConversationsScreen() {
             <TouchableOpacity onPress={() => setChatVisible(false)}>
               <Feather name="arrow-left" size={20} />
             </TouchableOpacity>
-
             <Text style={styles.chatTitle}>{getDisplayName(selectedUser)}</Text>
           </View>
 
@@ -355,7 +333,6 @@ export default function ConversationsScreen() {
             }
             renderItem={({ item }) => {
               const isMe = item.senderId === currentUser?.id;
-
               return (
                 <TouchableOpacity
                   onPress={() => copyMessage(item.content)}
@@ -367,9 +344,7 @@ export default function ConversationsScreen() {
                     },
                   ]}
                 >
-                  <Text style={{ color: isMe ? "#fff" : "#000" }}>
-                    {item.content}
-                  </Text>
+                  <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.content}</Text>
                 </TouchableOpacity>
               );
             }}
@@ -395,59 +370,17 @@ export default function ConversationsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
-  userItem: {
-    flexDirection: "row",
-    padding: 16,
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
+  userItem: { flexDirection: "row", padding: 16, alignItems: "center", justifyContent: "space-between" },
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14,
-  },
+  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: "#ddd", justifyContent: "center", alignItems: "center", marginRight: 14 },
   name: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
   chatTitle: { marginLeft: 10, fontWeight: "700", fontSize: 16 },
-  bubble: {
-    padding: 12,
-    borderRadius: 16,
-    marginBottom: 8,
-    maxWidth: "90%",
-  },
+  bubble: { padding: 12, borderRadius: 16, marginBottom: 8, maxWidth: "90%" },
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 16,
-  },
-  send: {
-    backgroundColor: "#000",
-    borderRadius: 20,
-    padding: 10,
-    marginLeft: 8,
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 20,
-    height: 40,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 14,
-  },
+  input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
+  send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
+  searchContainer: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: "#ddd", borderRadius: 20, height: 40 },
+  searchInput: { flex: 1, fontSize: 14 },
 });

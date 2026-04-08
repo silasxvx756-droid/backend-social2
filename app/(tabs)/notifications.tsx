@@ -8,7 +8,6 @@ import {
   ScrollView,
   ActivityIndicator,
 } from "react-native";
-import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
 import { useUser } from "@clerk/clerk-expo";
@@ -74,12 +73,10 @@ export default function NotificationsScreen() {
 
     if (user?.id) s.emit("join", user.id);
 
-    // ✅ NOVO: receber notificação em tempo real
     s.on("new-notification", (notification) => {
       setNotifications((prev) => [notification, ...prev]);
     });
 
-    // existente
     s.on("notification-updated", ({ notificationId, actor }) => {
       setNotifications((prev) =>
         prev.map((n) =>
@@ -193,9 +190,9 @@ export default function NotificationsScreen() {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Feather name="arrow-left" size={22} />
+        <View style={{ width: 22 }} /> {/* placeholder */}
         <Text style={styles.headerTitle}>Notificações</Text>
-        <View style={{ width: 22 }} />
+        <View style={{ width: 22 }} /> {/* placeholder */}
       </View>
 
       <ScrollView ref={scrollRef}>

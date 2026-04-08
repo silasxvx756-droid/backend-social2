@@ -84,15 +84,19 @@ const TabsLayout = () => {
   // ------------------- ANDROID NAVIGATION BAR -------------------
   useEffect(() => {
     if (Platform.OS === "android") {
-      NavigationBar.setBackgroundColorAsync("#FFF"); // fundo branco
-      NavigationBar.setButtonStyleAsync("dark"); // ícones escuros
+      // fundo branco total
+      NavigationBar.setBackgroundColorAsync("#FFF"); 
+      // ícones escuros
+      NavigationBar.setButtonStyleAsync("dark"); 
+      // garante que não fique transparente
+      NavigationBar.setVisibilityAsync("visible"); 
     }
   }, []);
 
   // ------------------- LOADING -------------------
   if (!isLoaded || !userLoaded) {
     return (
-      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFF" }}>
         <ActivityIndicator size="large" color="#000" />
       </View>
     );
@@ -113,9 +117,8 @@ const TabsLayout = () => {
         tabBarShowLabel: false,
         tabBarStyle: {
           display: keyboardVisible ? "none" : "flex",
-          backgroundColor,
-          borderTopWidth: 0.5,
-          borderTopColor: "#E5E7EB",
+          backgroundColor,      // branco total
+          borderTopWidth: 0,    // remove linha cinza
           height: 55 + insets.bottom,
           paddingBottom: insets.bottom,
         },

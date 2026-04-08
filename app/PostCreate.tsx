@@ -17,6 +17,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useUser } from "@clerk/clerk-expo";
 
 const API_URL = "https://backend-social-app-1.onrender.com"; // ajuste para sua rede
+const MAX_CHARS = 280; // limite de caracteres no texto, opcional
 
 export default function PostCreate() {
   const navigation = useNavigation<any>();
@@ -47,8 +48,8 @@ export default function PostCreate() {
 
   // Criar post
   const handleCreatePost = async () => {
-    if (!content.trim() && !image) {
-      console.log("Escreva algo ou adicione uma imagem");
+    if (!image) {
+      console.log("A postagem precisa de uma imagem");
       return;
     }
 
@@ -63,33 +64,29 @@ export default function PostCreate() {
       form.append("title", "Post");
       form.append("content", content);
 
-      // Define o dono do post como usuário logado do Clerk
       const actor = {
         id: user.id,
         username: user.username || `user_${user.id.slice(-6)}`,
         displayName: user.fullName || user.username || `User_${user.id.slice(-6)}`,
-        avatar: user.imageUrl || "", // pega a foto do Clerk
+        avatar: user.imageUrl || "",
       };
       form.append("actor", JSON.stringify(actor));
 
-      // Log no console do nome, avatar e conteúdo
       console.log("=== Criando novo post ===");
       console.log("Nome:", actor.displayName);
       console.log("Avatar:", actor.avatar);
       console.log("Conteúdo:", content);
-      if (image) console.log("Imagem URI:", image.uri);
+      console.log("Imagem URI:", image.uri);
       console.log("=========================");
 
       // Adiciona imagem
-      if (image) {
-        const uriParts = image.uri.split(".");
-        const fileType = uriParts[uriParts.length - 1];
-        form.append("image", {
-          uri: image.uri,
-          name: `photo.${fileType}`,
-          type: `image/${fileType === "jpg" ? "jpeg" : fileType}`,
-        } as any);
-      }
+      const uriParts = image.uri.split(".");
+      const fileType = uriParts[uriParts.length - 1];
+      form.append("image", {
+        uri: image.uri,
+        name: `photo.${fileType}`,
+        type: `image/${fileType === "jpg" ? "jpeg" : fileType}`,
+      } as any);
 
       const res = await fetch(`${API_URL}/posts/upload`, {
         method: "POST",
@@ -121,24 +118,36 @@ export default function PostCreate() {
         style={styles.innerContainer}
       >
         <TextInput
-          placeholder="Escreva algo..."
+          placeholder="Escreva algo (opcional)..."
           value={content}
-          onChangeText={setContent}
+          onChangeText={(text) => {
+            if (text.length <= MAX_CHARS) setContent(text);
+          }}
           multiline
           style={styles.input}
         />
+
+        {/* Contagem de caracteres */}
+        <Text style={styles.charCount}>
+          {content.length}/{MAX_CHARS}
+        </Text>
 
         {image && <Image source={{ uri: image.uri }} style={styles.imagePreview} />}
 
         <TouchableOpacity onPress={pickImage} style={styles.addImageButton}>
           <Ionicons name="image-outline" size={24} color="#000" />
-          <Text style={styles.addImageText}>Adicionar Imagem</Text>
+          <Text style={styles.addImageText}>
+            {image ? "Alterar Imagem" : "Adicionar Imagem"}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           onPress={handleCreatePost}
-          disabled={posting}
-          style={styles.postButton}
+          disabled={posting || !image} // só ativa se houver imagem
+          style={[
+            styles.postButton,
+            { backgroundColor: !image ? "#888" : "#000" }, // cinza se desativado
+          ]}
         >
           <Text style={styles.postButtonText}>
             {posting ? "Postando..." : "Postar"}
@@ -166,12 +175,18 @@ const styles = StyleSheet.create({
     padding: 10,
     minHeight: 100,
     width: "100%",
-    marginBottom: 12,
+    marginBottom: 4,
     textAlignVertical: "top",
+  },
+  charCount: {
+    alignSelf: "flex-end",
+    marginBottom: 12,
+    color: "#555",
+    fontSize: 12,
   },
   imagePreview: { width: "100%", height: 200, marginVertical: 12, borderRadius: 12 },
   addImageButton: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   addImageText: { marginLeft: 8, color: "#000", fontSize: 16 },
-  postButton: { backgroundColor: "#000", padding: 12, borderRadius: 12, width: "100%" },
+  postButton: { padding: 12, borderRadius: 12, width: "100%" },
   postButtonText: { color: "#fff", textAlign: "center", fontSize: 16 },
 });

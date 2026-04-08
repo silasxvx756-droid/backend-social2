@@ -62,7 +62,7 @@ const AdItem = React.memo(({ post }: any) => {
 });
 
 export default function PostsList({
-  username, // ID do usuário para filtrar posts
+  username,
   showNewPostButton = true,
   initialPosts = [],
   onPostAction,
@@ -111,7 +111,6 @@ export default function PostsList({
       const res = await fetch(`${API_URL}/posts`);
       const data = await res.json();
 
-      // Filtra posts do usuário se username for fornecido
       const filtered = username ? data.filter((p: any) => p.actor?.id === username) : data;
 
       const postsWithLiked = (filtered || []).map((p: any) => ({
@@ -140,7 +139,6 @@ export default function PostsList({
     setRefreshing(false);
   };
 
-  // Função para selecionar imagem
   const pickImage = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") return;
@@ -154,7 +152,6 @@ export default function PostsList({
     }
   };
 
-  // Criar novo post
   const handleCreatePost = async () => {
     if (!content.trim() && !image) return;
     try {
@@ -317,7 +314,15 @@ export default function PostsList({
     );
   };
 
-  if (loading) return <ActivityIndicator size="large" style={{ marginTop: 20 }} />;
+  if (loading)
+    return (
+      <ActivityIndicator
+        size="large"
+        color="#007AFF" // azul
+        style={{ marginTop: 20 }}
+        indeterminate={true} // garante efeito no Android
+      />
+    );
 
   return (
     <View style={{ flex: 1 }}>
@@ -339,7 +344,14 @@ export default function PostsList({
         removeClippedSubviews
         updateCellsBatchingPeriod={50}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#007AFF"]}            // spinner azul no Android
+            progressBackgroundColor="#fff"  // fundo branco no Android
+          />
+        }
       />
 
       <Modal visible={commentsModal} animationType="slide">
