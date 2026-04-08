@@ -24,6 +24,27 @@ const io = new Server(server, {
   },
 });
 
+// Mapear usuários online
+const onlineUsers = new Map();
+
+io.on("connection", (socket) => {
+  console.log("⚡ Socket conectado:", socket.id);
+
+  socket.on("join", (userId) => {
+    onlineUsers.set(userId, socket.id); // mapeia userId → socket.id
+    socket.join(userId);
+    console.log(`🔹 Usuário ${userId} entrou na sala`);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("⚡ Socket desconectado:", socket.id);
+    for (const [userId, sId] of onlineUsers.entries()) {
+      if (sId === socket.id) onlineUsers.delete(userId);
+    }
+  });
+});
+
+// ================= MIDDLEWARE =================
 app.use(cors());
 app.use(express.json());
 
@@ -475,10 +496,22 @@ app.get("/messages", async (req, res) => {
 });
 
 app.post("/messages", async (req, res) => {
-  const msg = await Message.create(req.body);
-  io.to(msg.senderId).emit("message", msg);
-  io.to(msg.receiverId).emit("message", msg);
-  res.json(msg);
+  try {
+    const msg = await Message.create(req.body);
+
+    // Emitir para salas do sender e receiver
+    io.to(msg.senderId).emit("message", msg);
+    io.to(msg.receiverId).emit("message", msg);
+
+    // Emitir para sockets mapeados
+    if (onlineUsers.has(msg.senderId)) io.to(onlineUsers.get(msg.senderId)).emit("message", msg);
+    if (onlineUsers.has(msg.receiverId)) io.to(onlineUsers.get(msg.receiverId)).emit("message", msg);
+
+    res.json(msg);
+  } catch (err) {
+    console.error("Erro ao enviar mensagem:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= NOTIFICATIONS ================= */
@@ -495,57 +528,14 @@ app.get("/api/notifications/:userId", async (req, res) => {
 });
 
 app.post("/api/notifications/:id/read", async (req, res) => {
-  const updated = await Notification.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
-  res.json(updated);
-});
-
-app.post("/api/notifications/read-all", async (req, res) => {
   try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: "userId é obrigatório" });
-    await Notification.updateMany({ userId: String(userId), read: false }, { $set: { read: true } });
+    await Notification.findByIdAndUpdate(req.params.id, { read: true });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ================= ATUALIZAR AVATAR / NOME NAS NOTIFICAÇÕES ================= */
-app.post("/users/:clerkId/update-profile", async (req, res) => {
-  try {
-    const { clerkId } = req.params;
-    const { displayName, avatar } = req.body;
-
-    const notificationsToUpdate = await Notification.find({ "actor.id": clerkId });
-    for (const n of notificationsToUpdate) {
-      n.actor.displayName = displayName;
-      n.actor.avatar = avatar;
-      await n.save();
-
-      io.to(n.userId).emit("notification", n);
-    }
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ================= SOCKET.IO EVENTS ================= */
-io.on("connection", (socket) => {
-  console.log("⚡ Socket conectado:", socket.id);
-
-  socket.on("join", (userId) => {
-    socket.join(userId);
-    console.log(`🔹 Usuário ${userId} entrou na sala`);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("⚡ Socket desconectado:", socket.id);
-  });
-});
-
-/* ================= SERVER LISTEN ================= */
+/* ================= SERVER ================= */
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando em ${SERVER_URL}`);
-});
+server.listen(PORT, () => console.log(`🚀 Server rodando na porta ${PORT}`));
