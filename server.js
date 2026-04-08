@@ -475,10 +475,16 @@ app.get("/messages", async (req, res) => {
 });
 
 app.post("/messages", async (req, res) => {
-  const msg = await Message.create(req.body);
-  io.to(msg.senderId).emit("message", msg);
-  io.to(msg.receiverId).emit("message", msg);
-  res.json(msg);
+  try {
+    const msg = await Message.create(req.body);
+    // 🔹 Envia para todos conectados na sala do usuário
+    io.to(msg.senderId).emit("message", msg);
+    io.to(msg.receiverId).emit("message", msg);
+    res.json(msg);
+  } catch (err) {
+    console.error("Erro enviar mensagem:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 /* ================= NOTIFICATIONS ================= */
@@ -515,28 +521,22 @@ app.post("/users/:clerkId/update-profile", async (req, res) => {
   try {
     const { clerkId } = req.params;
     const { displayName, avatar } = req.body;
-
-    const notificationsToUpdate = await Notification.find({ "actor.id": clerkId });
-    for (const n of notificationsToUpdate) {
-      n.actor.displayName = displayName;
-      n.actor.avatar = avatar;
-      await n.save();
-
-      io.to(n.userId).emit("notification", n);
-    }
+    await User.updateOne({ id: clerkId }, { $set: { displayName, avatar } });
+    await Notification.updateMany({ "actor.id": clerkId }, { $set: { "actor.displayName": displayName, "actor.avatar": avatar } });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ================= SOCKET.IO EVENTS ================= */
+/* ================= SOCKET.IO ================= */
 io.on("connection", (socket) => {
-  console.log("⚡ Socket conectado:", socket.id);
+  console.log("🔌 Novo socket conectado:", socket.id);
 
+  // 🔹 Usuário entra na sala do próprio ID
   socket.on("join", (userId) => {
     socket.join(userId);
-    console.log(`🔹 Usuário ${userId} entrou na sala`);
+    console.log(`🟢 User ${userId} entrou na sala.`);
   });
 
   socket.on("disconnect", () => {
@@ -544,8 +544,8 @@ io.on("connection", (socket) => {
   });
 });
 
-/* ================= SERVER LISTEN ================= */
+/* ================= SERVER ================= */
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-  console.log(`🚀 Servidor rodando em ${SERVER_URL}`);
+  console.log(`🚀 Servidor rodando em: ${SERVER_URL}`);
 });
