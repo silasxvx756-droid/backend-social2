@@ -211,7 +211,8 @@ const getCachedUser = async (userId) => {
   const cached = userCache.get(userId);
   if (cached && Date.now() - cached.timestamp < 30000) return cached.data;
   const freshUser = await fetchClerkUserById(userId);
-  if (freshUser) userCache.set(userId, { data: freshUser, timestamp: Date.now() });
+  if (freshUser)
+    userCache.set(userId, { data: freshUser, timestamp: Date.now() });
   return freshUser;
 };
 
@@ -226,307 +227,50 @@ app.get("/users", async (req, res) => {
   }
 });
 
-app.get("/users/:username", async (req, res) => {
-  try {
-    const { username } = req.params;
-    let user = await User.findOne({ username });
-
-    if (!user) {
-      const users = await fetchClerkUsers(username);
-      const u = users[0];
-      if (!u) return res.status(404).json({ error: "Usuário não encontrado" });
-      user = await User.create({
-        id: u.clerkId,
-        username: u.username,
-        displayName: u.displayName,
-        avatar: u.avatar,
-      });
-    }
-
-    const postsCount = await Post.countDocuments({ "actor.id": user.id });
-    const followersCount = await Follow.countDocuments({ followingId: user.id });
-    const followingCount = await Follow.countDocuments({ followerId: user.id });
-
-    res.json({
-      username: user.username,
-      displayName: user.displayName,
-      bio: user.bio || "",
-      avatar: user.avatar || "",
-      followers: followersCount,
-      following: followingCount,
-      posts: postsCount,
-      clerkId: user.id,
-    });
-  } catch (err) {
-    console.error("Erro /users/:username:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ================= FOLLOWERS / FOLLOWING ================= */
-app.get("/followers/:clerkId", async (req, res) => {
-  try {
-    const { clerkId } = req.params;
-    const followers = await Follow.find({ followingId: clerkId });
-    const users = await Promise.all(followers.map(f => fetchClerkUserById(f.followerId)));
-    res.json(users.filter(Boolean));
-  } catch (err) {
-    console.error("Erro /followers/:clerkId:", err);
-    res.status(500).json({ error: "Erro ao buscar seguidores" });
-  }
-});
-
-app.get("/following/:clerkId", async (req, res) => {
-  try {
-    const { clerkId } = req.params;
-    const following = await Follow.find({ followerId: clerkId });
-    const users = await Promise.all(following.map(f => fetchClerkUserById(f.followingId)));
-    res.json(users.filter(Boolean));
-  } catch (err) {
-    console.error("Erro /following/:clerkId:", err);
-    res.status(500).json({ error: "Erro ao buscar seguindo" });
-  }
-});
-
-/* ================= FOLLOW / UNFOLLOW ================= */
-app.post("/follow", async (req, res) => {
-  try {
-    const { followerId, followingId } = req.body;
-    const exists = await Follow.findOne({ followerId, followingId });
-
-    if (!exists) {
-      await Follow.create({ followerId, followingId });
-      await User.updateOne({ id: followingId }, { $inc: { followers: 1 } }, { upsert: true });
-      await User.updateOne({ id: followerId }, { $inc: { following: 1 } }, { upsert: true });
-
-      const freshFollowerUser = await fetchClerkUserById(followerId);
-      if (freshFollowerUser) {
-        userCache.set(followerId, { data: freshFollowerUser, timestamp: Date.now() });
-        const notification = await Notification.create({
-          userId: followingId,
-          type: "follow",
-          actor: freshFollowerUser,
-          read: false,
-        });
-        io.to(followingId).emit("notification", {
-          ...notification.toObject(),
-          actor: freshFollowerUser,
-        });
-      }
-    }
-
-    res.json({ success: true, following: !exists });
-  } catch (err) {
-    console.error("Erro follow:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/unfollow", async (req, res) => {
-  try {
-    const { followerId, followingId } = req.body;
-    const deleted = await Follow.findOneAndDelete({ followerId, followingId });
-    if (deleted) {
-      await User.updateOne({ id: followingId }, { $inc: { followers: -1 } });
-      await User.updateOne({ id: followerId }, { $inc: { following: -1 } });
-    }
-    res.json({ success: true, following: false });
-  } catch (err) {
-    console.error("Erro unfollow:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ================= POSTS ================= */
-app.get("/posts", async (req, res) => {
-  try {
-    const posts = await Post.find().sort({ createdAt: -1 });
-    const updatedPosts = await Promise.all(
-      posts.map(async (post) => {
-        const freshUser = await getCachedUser(post.actor.id);
-        return {
-          ...post.toObject(),
-          actor: freshUser
-            ? {
-                id: freshUser.clerkId,
-                username: freshUser.username,
-                displayName: freshUser.displayName,
-                avatar: freshUser.avatar,
-              }
-            : post.actor,
-        };
-      })
-    );
-    res.json(updatedPosts);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/posts/upload", upload.single("image"), async (req, res) => {
-  try {
-    let { title, content, actor } = req.body;
-    if (typeof actor === "string") actor = JSON.parse(actor);
-
-    const freshUser = await fetchClerkUserById(actor.id);
-    const finalActor = freshUser
-      ? {
-          id: freshUser.clerkId,
-          username: freshUser.username,
-          displayName: freshUser.displayName,
-          avatar: freshUser.avatar,
-        }
-      : actor;
-
-    let imageUrl = null;
-    if (req.file) {
-      const result = await new Promise((resolve, reject) => {
-        const stream = cloudinary.uploader.upload_stream(
-          { folder: "posts" },
-          (err, result) => (result ? resolve(result) : reject(err))
-        );
-        streamifier.createReadStream(req.file.buffer).pipe(stream);
-      });
-      imageUrl = result.secure_url;
-    }
-
-    const post = await Post.create({ title, content, actor: finalActor, image: imageUrl });
-    await Notification.create({ userId: finalActor.id, type: "post", postId: String(post._id), actor: finalActor });
-    res.status(201).json(post);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get("/posts/:id", async (req, res) => {
-  try {
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ error: "Post não encontrado" });
-    res.json(post);
-  } catch (err) {
-    res.status(500).json({ error: "ID inválido" });
-  }
-});
-
-app.delete("/posts/:id", async (req, res) => {
-  try {
-    const post = await Post.findByIdAndDelete(req.params.id);
-    if (!post) return res.status(404).json({ error: "Post não encontrado" });
-    await Notification.deleteMany({ postId: String(post._id) });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/posts/:id/like", async (req, res) => {
-  try {
-    const { user } = req.body;
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ error: "Post não encontrado" });
-    const liked = post.likes.find((u) => u.id === user.id);
-    if (liked) post.likes = post.likes.filter((u) => u.id !== user.id);
-    else {
-      post.likes.push({ id: user.id, username: user.username });
-      await Notification.create({
-        userId: post.actor.id,
-        type: "like",
-        postId: String(post._id),
-        actor: user,
-      });
-    }
-    await post.save();
-    res.json({ likes: post.likes });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post("/posts/:id/comments", async (req, res) => {
-  try {
-    const { text, user } = req.body;
-    const post = await Post.findById(req.params.id);
-    if (!post) return res.status(404).json({ error: "Post não encontrado" });
-    const comment = { text, user, createdAt: new Date() };
-    post.comments.push(comment);
-    await post.save();
-    await Notification.create({
-      userId: post.actor.id,
-      type: "comment",
-      postId: String(post._id),
-      actor: user,
-    });
-    res.json(comment);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/* ================= MESSAGES ================= */
+/* ================= MESSAGES (CORRIGIDO) ================= */
 app.get("/messages", async (req, res) => {
-  const { user1, user2 } = req.query;
-  const msgs = await Message.find({
-    $or: [
-      { senderId: user1, receiverId: user2 },
-      { senderId: user2, receiverId: user1 },
-    ],
-  }).sort({ createdAt: 1 });
-  res.json(msgs);
+  try {
+    const { user1, user2 } = req.query;
+
+    if (!user1 || !user2) {
+      return res.status(400).json({ error: "user1 e user2 são obrigatórios" });
+    }
+
+    const msgs = await Message.find({
+      $or: [
+        { senderId: user1, receiverId: user2 },
+        { senderId: user2, receiverId: user1 },
+      ],
+    }).sort({ createdAt: 1 });
+
+    res.json(msgs);
+  } catch (err) {
+    console.error("Erro ao buscar mensagens:", err);
+    res.status(500).json({ error: "Erro ao buscar mensagens" });
+  }
 });
 
 app.post("/messages", async (req, res) => {
-  const msg = await Message.create(req.body);
-  io.to(msg.senderId).emit("message", msg);
-  io.to(msg.receiverId).emit("message", msg);
-  res.json(msg);
-});
-
-/* ================= NOTIFICATIONS ================= */
-app.get("/api/notifications/:userId", async (req, res) => {
-  const notifications = await Notification.find({ userId: req.params.userId }).sort({ createdAt: -1 });
-  const updatedNotifications = await Promise.all(notifications.map(async (n) => {
-    const freshActor = await getCachedUser(n.actor.id);
-    return {
-      ...n.toObject(),
-      actor: freshActor || n.actor
-    };
-  }));
-  res.json(updatedNotifications);
-});
-
-app.post("/api/notifications/:id/read", async (req, res) => {
-  const updated = await Notification.findByIdAndUpdate(req.params.id, { read: true }, { new: true });
-  res.json(updated);
-});
-
-app.post("/api/notifications/read-all", async (req, res) => {
   try {
-    const { userId } = req.body;
-    if (!userId) return res.status(400).json({ error: "userId é obrigatório" });
-    await Notification.updateMany({ userId: String(userId), read: false }, { $set: { read: true } });
-    res.json({ success: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    const { senderId, receiverId, content } = req.body;
 
-/* ================= ATUALIZAR AVATAR / NOME NAS NOTIFICAÇÕES ================= */
-app.post("/users/:clerkId/update-profile", async (req, res) => {
-  try {
-    const { clerkId } = req.params;
-    const { displayName, avatar } = req.body;
-
-    const notificationsToUpdate = await Notification.find({ "actor.id": clerkId });
-    for (const n of notificationsToUpdate) {
-      n.actor.displayName = displayName;
-      n.actor.avatar = avatar;
-      await n.save();
-
-      io.to(n.userId).emit("notification", n);
+    if (!senderId || !receiverId || !content) {
+      return res.status(400).json({ error: "Dados incompletos" });
     }
-    res.json({ success: true });
+
+    const msg = await Message.create({
+      senderId,
+      receiverId,
+      content,
+    });
+
+    io.to(senderId).emit("message", msg);
+    io.to(receiverId).emit("message", msg);
+
+    res.json(msg);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("Erro ao enviar mensagem:", err);
+    res.status(500).json({ error: "Erro ao enviar mensagem" });
   }
 });
 
@@ -543,6 +287,14 @@ io.on("connection", (socket) => {
     console.log("⚡ Socket desconectado:", socket.id);
   });
 });
+
+/* ================= KEEP ALIVE ================= */
+setInterval(async () => {
+  try {
+    await fetch(SERVER_URL);
+    console.log("🔄 keep alive");
+  } catch (err) {}
+}, 1000 * 60 * 10);
 
 /* ================= SERVER LISTEN ================= */
 const PORT = process.env.PORT || 5000;

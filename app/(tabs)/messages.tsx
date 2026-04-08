@@ -60,8 +60,9 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
 
     const socket = io(API_URL, {
-      transports: ["websocket", "polling"],
-      secure: true,
+      transports: ["websocket"], // 🔥 FIX APK
+      reconnection: true,
+      reconnectionAttempts: 5,
     });
 
     socketRef.current = socket;
@@ -82,7 +83,6 @@ export default function ConversationsScreen() {
     socket.on("message", (msg: Message) => {
       console.log("📨 Mensagem recebida:", msg);
 
-      // Evita duplicata
       setMessages((prev) => {
         const exists = prev.find((m) => m._id === msg._id);
         if (exists) return prev;
@@ -94,6 +94,7 @@ export default function ConversationsScreen() {
 
       setUsers((prev) => {
         const existsUser = prev.find((u) => u.clerkId === otherUserId);
+
         if (existsUser) {
           return prev
             .map((u) =>
@@ -107,8 +108,12 @@ export default function ConversationsScreen() {
                 : u
             )
             .sort((a, b) => {
-              const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-              const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+              const aTime = a.lastMessage
+                ? new Date(a.lastMessage.createdAt).getTime()
+                : 0;
+              const bTime = b.lastMessage
+                ? new Date(b.lastMessage.createdAt).getTime()
+                : 0;
               return bTime - aTime;
             });
         } else {
@@ -130,14 +135,26 @@ export default function ConversationsScreen() {
     return () => {
       socket.disconnect();
     };
-  }, [currentUser, selectedUser]);
+  }, [currentUser]); // 🔥 REMOVIDO selectedUser (BUG DO APK)
+
+  /* ================= FETCH COM TIMEOUT ================= */
+  const fetchWithTimeout = (url: string, options = {}, timeout = 10000) => {
+    return Promise.race([
+      fetch(url, options),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), timeout)
+      ),
+    ]) as Promise<Response>;
+  };
 
   /* ================= LOAD USERS ================= */
   const loadUsers = useCallback(async () => {
     if (!currentUser) return;
+
     try {
-      const res = await fetch(`${API_URL}/users?exclude=${currentUser.id}`);
-      if (!res.ok) return console.error("Erro ao buscar usuários", res.status);
+      const res = await fetchWithTimeout(
+        `${API_URL}/users?exclude=${currentUser.id}`
+      );
 
       const data: User[] = await res.json();
       setAllUsers(data);
@@ -145,10 +162,9 @@ export default function ConversationsScreen() {
       const usersWithLast = await Promise.all(
         data.map(async (user) => {
           try {
-            const resMsg = await fetch(
+            const resMsg = await fetchWithTimeout(
               `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
             );
-            if (!resMsg.ok) return console.error("Erro mensagens", user.username);
 
             const msgs: Message[] = await resMsg.json();
             const last = msgs[msgs.length - 1];
@@ -159,8 +175,7 @@ export default function ConversationsScreen() {
               messages: msgs || [],
               unread: false,
             };
-          } catch (err) {
-            console.error("Erro fetch mensagens", user.username, err);
+          } catch {
             return { ...user, lastMessage: null, messages: [], unread: false };
           }
         })
@@ -170,8 +185,12 @@ export default function ConversationsScreen() {
         usersWithLast
           .filter((u) => u.lastMessage)
           .sort((a, b) => {
-            const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-            const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+            const aTime = a.lastMessage
+              ? new Date(a.lastMessage.createdAt).getTime()
+              : 0;
+            const bTime = b.lastMessage
+              ? new Date(b.lastMessage.createdAt).getTime()
+              : 0;
             return bTime - aTime;
           })
       );
@@ -182,11 +201,11 @@ export default function ConversationsScreen() {
 
   const loadMessages = async (user: User) => {
     if (!currentUser) return;
+
     try {
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
       );
-      if (!res.ok) return console.error("Erro ao buscar mensagens", res.status);
 
       const data: Message[] = await res.json();
       setMessages(data);
@@ -205,14 +224,27 @@ export default function ConversationsScreen() {
       content: inputText.trim(),
     };
 
-    setInputText(""); // Limpa input antes de enviar
+    const tempMessage: Message = {
+      _id: Date.now().toString(),
+      ...body,
+      createdAt: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, tempMessage]); // 🔥 instantâneo
+    setInputText("");
 
     try {
-      await fetch(`${API_URL}/messages`, {
+      const res = await fetchWithTimeout(`${API_URL}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+
+      const realMsg = await res.json();
+
+      setMessages((prev) =>
+        prev.map((m) => (m._id === tempMessage._id ? realMsg : m))
+      );
     } catch (err) {
       console.error("Erro sendMessage", err);
     }
@@ -262,7 +294,10 @@ export default function ConversationsScreen() {
   return (
     <View style={styles.container}>
       <Text
-        style={[styles.headerTitle, { paddingTop: insets.top + 20, paddingHorizontal: 16 }]}
+        style={[
+          styles.headerTitle,
+          { paddingTop: insets.top + 20, paddingHorizontal: 16 },
+        ]}
       >
         Mensagens
       </Text>
@@ -279,8 +314,12 @@ export default function ConversationsScreen() {
 
       <FlatList
         data={displayedUsers.sort((a, b) => {
-          const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
-          const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
+          const aTime = a.lastMessage
+            ? new Date(a.lastMessage.createdAt).getTime()
+            : 0;
+          const bTime = b.lastMessage
+            ? new Date(b.lastMessage.createdAt).getTime()
+            : 0;
           return bTime - aTime;
         })}
         keyExtractor={(i) => i.clerkId}
@@ -320,7 +359,9 @@ export default function ConversationsScreen() {
             <TouchableOpacity onPress={() => setChatVisible(false)}>
               <Feather name="arrow-left" size={20} />
             </TouchableOpacity>
-            <Text style={styles.chatTitle}>{getDisplayName(selectedUser)}</Text>
+            <Text style={styles.chatTitle}>
+              {getDisplayName(selectedUser)}
+            </Text>
           </View>
 
           <FlatList
@@ -344,7 +385,9 @@ export default function ConversationsScreen() {
                     },
                   ]}
                 >
-                  <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.content}</Text>
+                  <Text style={{ color: isMe ? "#fff" : "#000" }}>
+                    {item.content}
+                  </Text>
                 </TouchableOpacity>
               );
             }}
@@ -370,17 +413,56 @@ export default function ConversationsScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
-  userItem: { flexDirection: "row", padding: 16, alignItems: "center", justifyContent: "space-between" },
+  userItem: {
+    flexDirection: "row",
+    padding: 16,
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
-  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: "#ddd", justifyContent: "center", alignItems: "center", marginRight: 14 },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
   name: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
   chatTitle: { marginLeft: 10, fontWeight: "700", fontSize: 16 },
-  bubble: { padding: 12, borderRadius: 16, marginBottom: 8, maxWidth: "90%" },
+  bubble: {
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 8,
+    maxWidth: "90%",
+  },
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
-  input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
-  send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
-  searchContainer: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: "#ddd", borderRadius: 20, height: 40 },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+  },
+  send: {
+    backgroundColor: "#000",
+    borderRadius: 20,
+    padding: 10,
+    marginLeft: 8,
+  },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    height: 40,
+  },
   searchInput: { flex: 1, fontSize: 14 },
 });
