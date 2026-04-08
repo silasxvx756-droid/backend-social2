@@ -22,11 +22,9 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 
 const API_URL = "https://backend-social-app-1.onrender.com";
 const { width } = Dimensions.get("window");
-
-// ID da postagem que será propaganda
 const AD_POST_ID = "69d4cec46935552434b0556b";
 
-// 🔥 Anúncio otimizado
+// Componente de anúncio
 const AdItem = React.memo(({ post }: any) => {
   if (!post) return null;
   return (
@@ -43,7 +41,6 @@ const AdItem = React.memo(({ post }: any) => {
             </View>
           </View>
         </View>
-
         {post.image && (
           <Image
             source={{ uri: post.image }}
@@ -52,7 +49,6 @@ const AdItem = React.memo(({ post }: any) => {
             cachePolicy="memory-disk"
           />
         )}
-
         <View style={styles.contentPadding}>
           {post.content && <Text style={{ marginTop: 6 }}>{post.content}</Text>}
         </View>
@@ -73,6 +69,11 @@ export default function PostsList({
   const [posts, setPosts] = useState(initialPosts);
   const [loading, setLoading] = useState(!initialPosts.length);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [onEndReachedCalledDuringMomentum, setOnEndReachedCalledDuringMomentum] = useState(true);
+
   const [modalVisible, setModalVisible] = useState(false);
   const [content, setContent] = useState("");
   const [image, setImage] = useState<any>(null);
@@ -86,9 +87,7 @@ export default function PostsList({
 
   const currentUser = {
     id: user?.id,
-    username:
-      user?.username ||
-      user?.primaryEmailAddress?.emailAddress?.split("@")[0],
+    username: user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0],
     displayName: user?.fullName || user?.firstName || "Usuário",
     avatar: user?.imageUrl,
   };
@@ -105,37 +104,50 @@ export default function PostsList({
     return past.toLocaleDateString();
   };
 
-  const fetchPosts = async () => {
+  const fetchPosts = async (reset = false) => {
+    if (fetching || (!hasMore && !reset)) return;
+    setFetching(true);
+    setLoading(reset);
+
     try {
-      setLoading(true);
-      const res = await fetch(`${API_URL}/posts`);
+      const currentPage = reset ? 0 : page;
+      const res = await fetch(`${API_URL}/posts?skip=${currentPage * 10}&limit=10`);
       const data = await res.json();
 
       const filtered = username ? data.filter((p: any) => p.actor?.id === username) : data;
-
       const postsWithLiked = (filtered || []).map((p: any) => ({
         ...p,
         likedByMe: p.likes?.some((u: any) => u.id === currentUser.id),
       }));
 
-      setPosts(postsWithLiked);
+      if (reset) {
+        setPosts(postsWithLiked);
+        setPage(1);
+        setHasMore(postsWithLiked.length === 10);
+      } else {
+        setPosts((prev) => [...prev, ...postsWithLiked]);
+        setPage(currentPage + 1);
+        setHasMore(postsWithLiked.length === 10);
+      }
+
       if (onPostAction) onPostAction(postsWithLiked);
     } catch (e) {
       console.log("Erro fetchPosts:", e);
     } finally {
+      setFetching(false);
       setLoading(false);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      fetchPosts();
+      fetchPosts(true);
     }, [username])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchPosts();
+    await fetchPosts(true);
     setRefreshing(false);
   };
 
@@ -171,12 +183,11 @@ export default function PostsList({
       }
       const res = await fetch(`${API_URL}/posts/upload`, { method: "POST", body: form });
       const newPost = await res.json();
-      const newPosts = [newPost, ...posts];
-      setPosts(newPosts);
+      setPosts((prev) => [newPost, ...prev]);
       setModalVisible(false);
       setContent("");
       setImage(null);
-      if (onPostAction) onPostAction(newPosts);
+      if (onPostAction) onPostAction([newPost, ...posts]);
     } catch {
       Alert.alert("Erro ao postar");
     } finally {
@@ -207,7 +218,7 @@ export default function PostsList({
         body: JSON.stringify({ user: currentUser }),
       });
     } catch {
-      fetchPosts();
+      fetchPosts(true);
     } finally {
       setLikingPostId(null);
     }
@@ -222,9 +233,8 @@ export default function PostsList({
         onPress: async () => {
           try {
             await fetch(`${API_URL}/posts/${postId}`, { method: "DELETE" });
-            const updatedPosts = posts.filter((p) => p._id !== postId);
-            setPosts(updatedPosts);
-            if (onPostAction) onPostAction(updatedPosts);
+            setPosts((prev) => prev.filter((p) => p._id !== postId));
+            if (onPostAction) onPostAction(posts.filter((p) => p._id !== postId));
           } catch {
             Alert.alert("Erro ao apagar");
           }
@@ -279,7 +289,10 @@ export default function PostsList({
             </View>
 
             {item.actor?.id === currentUser.id && (
-              <TouchableOpacity onPress={() => handleDeletePost(item._id)} style={{ marginLeft: "auto" }}>
+              <TouchableOpacity
+                onPress={() => handleDeletePost(item._id)}
+                style={{ marginLeft: "auto" }}
+              >
                 <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
               </TouchableOpacity>
             )}
@@ -287,13 +300,22 @@ export default function PostsList({
         </View>
 
         {item.image && (
-          <Image source={{ uri: item.image }} style={styles.postImage} contentFit="cover" cachePolicy="memory-disk" />
+          <Image
+            source={{ uri: item.image }}
+            style={styles.postImage}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+          />
         )}
 
         <View style={styles.contentPadding}>
           <View style={styles.actionsRow}>
             <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item._id)}>
-              <Ionicons name={item.likedByMe ? "heart" : "heart-outline"} size={22} color={item.likedByMe ? "#ff3040" : "#222"} />
+              <Ionicons
+                name={item.likedByMe ? "heart" : "heart-outline"}
+                size={22}
+                color={item.likedByMe ? "#ff3040" : "#222"}
+              />
               <Text style={styles.count}>{item.likes?.length || 0}</Text>
             </TouchableOpacity>
 
@@ -314,21 +336,18 @@ export default function PostsList({
     );
   };
 
-  if (loading)
-    return (
-      <ActivityIndicator
-        size="large"
-        color="#007AFF" // azul
-        style={{ marginTop: 20 }}
-        indeterminate={true} // garante efeito no Android
-      />
-    );
+  if (loading && posts.length === 0)
+    return <ActivityIndicator size="large" color="#007AFF" style={{ marginTop: 20 }} />;
 
   return (
     <View style={{ flex: 1 }}>
       {showNewPostButton && (
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.navigate("PostCreate", { onPostCreated: fetchPosts })}>
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate("PostCreate", { onPostCreated: () => fetchPosts(true) })
+            }
+          >
             <Ionicons name="add" size={32} />
           </TouchableOpacity>
         </View>
@@ -348,10 +367,18 @@ export default function PostsList({
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#007AFF"]}            // spinner azul no Android
-            progressBackgroundColor="#fff"  // fundo branco no Android
+            colors={["#007AFF"]}
+            progressBackgroundColor="#fff"
           />
         }
+        onEndReached={() => {
+          if (!fetching && hasMore && !onEndReachedCalledDuringMomentum) {
+            fetchPosts();
+            setOnEndReachedCalledDuringMomentum(true);
+          }
+        }}
+        onEndReachedThreshold={0.5}
+        onMomentumScrollBegin={() => setOnEndReachedCalledDuringMomentum(false)}
       />
 
       <Modal visible={commentsModal} animationType="slide">
@@ -385,7 +412,10 @@ export default function PostsList({
                 placeholder="Comentário..."
                 style={[styles.input, { marginRight: 8 }]}
               />
-              <TouchableOpacity onPress={handleComment} style={{ backgroundColor: "#000", padding: 10, borderRadius: 20 }}>
+              <TouchableOpacity
+                onPress={handleComment}
+                style={{ backgroundColor: "#000", padding: 10, borderRadius: 20 }}
+              >
                 <Ionicons name="send" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -415,5 +445,12 @@ const styles = StyleSheet.create({
   commentsHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   commentsTitle: { fontWeight: "700", fontSize: 18 },
   commentAvatar: { width: 32, height: 32, borderRadius: 16 },
-  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 20, paddingHorizontal: 12, height: 40 },
+  input: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    height: 40,
+  },
 });
