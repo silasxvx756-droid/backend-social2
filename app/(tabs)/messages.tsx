@@ -56,7 +56,7 @@ export default function ConversationsScreen() {
 
   /* ================= SOCKET ================= */
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || socketRef.current) return; // criar socket apenas 1x
 
     const socket = io(API_URL, {
       transports: ["websocket"],
@@ -71,22 +71,27 @@ export default function ConversationsScreen() {
       socket.emit("join", currentUser.id);
     });
 
-    const handleIncomingMessage = async (msg: Message) => {
+    const handleIncomingMessage = (msg: Message) => {
+      // evita duplicados por _id ou mesmo conteúdo do remetente
       setMessages((prev) => {
-        if (prev.find((m) => m._id === msg._id)) return prev;
+        if (
+          prev.some(
+            (m) =>
+              m._id === msg._id ||
+              (m.content === msg.content && m.senderId === msg.senderId)
+          )
+        )
+          return prev;
         return [...prev, msg];
       });
 
       const otherUserId = msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
       if (!allUsers.find((u) => u.clerkId === otherUserId)) {
-        try {
-          const res = await fetch(`${API_URL}/users/${otherUserId}`);
-          const userData: User = await res.json();
-          setAllUsers((prev) => [...prev, userData]);
-        } catch (err) {
-          console.error("Erro fetch usuário do socket:", err);
-        }
+        fetch(`${API_URL}/users/${otherUserId}`)
+          .then((res) => res.json())
+          .then((userData: User) => setAllUsers((prev) => [...prev, userData]))
+          .catch((err) => console.error("Erro fetch usuário do socket:", err));
       }
     };
 
@@ -96,7 +101,7 @@ export default function ConversationsScreen() {
       socket.off("message", handleIncomingMessage);
       socket.disconnect();
     };
-  }, [currentUser]);
+  }, [currentUser, allUsers]);
 
   /* ================= HELPERS ================= */
   const sortByLastMessage = (a: User, b: User) => {
@@ -172,14 +177,7 @@ export default function ConversationsScreen() {
       content: inputText.trim(),
     };
 
-    const tempMessage: Message = {
-      _id: Date.now().toString(),
-      ...body,
-      createdAt: new Date().toISOString(),
-    };
-
-    setMessages((prev) => [...prev, tempMessage]);
-    setInputText("");
+    setInputText(""); // limpa input imediatamente
 
     try {
       const res = await fetchWithTimeout(`${API_URL}/messages`, {
@@ -188,19 +186,24 @@ export default function ConversationsScreen() {
         body: JSON.stringify(body),
       });
       const realMsg = await res.json();
-      setMessages((prev) => prev.map((m) => (m._id === tempMessage._id ? realMsg : m)));
+
+      setMessages((prev) => [...prev, realMsg]); // adiciona apenas a real do servidor
     } catch (err) {
       console.error("Erro sendMessage", err);
     }
   };
 
-  useFocusEffect(useCallback(() => { loadUsers(); }, [loadUsers]));
+  useFocusEffect(useCallback(() => {
+    loadUsers();
+  }, [loadUsers]));
 
   const openChat = (user: User) => {
     setSelectedUser(user);
     setChatVisible(true);
     setMessages(user.messages || []);
-    setUsers((prev) => prev.map((u) => (u.clerkId === user.clerkId ? { ...u, unread: false } : u)));
+    setUsers((prev) =>
+      prev.map((u) => (u.clerkId === user.clerkId ? { ...u, unread: false } : u))
+    );
   };
 
   const getDisplayName = (user: User | null) => user?.displayName || user?.username || "Usuário";
@@ -273,12 +276,19 @@ export default function ConversationsScreen() {
             initialNumToRender={20}
             maxToRenderPerBatch={20}
             windowSize={10}
-            onContentSizeChange={() => setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50)}
+            onContentSizeChange={() =>
+              setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50)
+            }
             renderItem={({ item }) => {
               const isMe = item.senderId === currentUser?.id;
               return (
-                <TouchableOpacity onPress={() => copyMessage(item.content)}
-                  style={[styles.bubble, { alignSelf: isMe ? "flex-end" : "flex-start", backgroundColor: isMe ? "#000" : "#e5e5e5" }]}>
+                <TouchableOpacity
+                  onPress={() => copyMessage(item.content)}
+                  style={[
+                    styles.bubble,
+                    { alignSelf: isMe ? "flex-end" : "flex-start", backgroundColor: isMe ? "#000" : "#e5e5e5" },
+                  ]}
+                >
                   <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.content}</Text>
                 </TouchableOpacity>
               );
@@ -308,7 +318,16 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
   userItem: { flexDirection: "row", padding: 16, alignItems: "center" },
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
-  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: "#ddd", justifyContent: "center", alignItems: "center", marginRight: 14 },
+  avatarPlaceholder: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+  },
   name: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
@@ -317,6 +336,16 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
   input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
   send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
-  searchContainer: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: "#ddd", borderRadius: 20, height: 40 },
+  searchContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    height: 40,
+  },
   searchInput: { flex: 1, fontSize: 14, marginLeft: 8 },
 });
