@@ -59,7 +59,7 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
 
     const socket = io(API_URL, {
-      transports: ["websocket"], // força websocket
+      transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 5,
     });
@@ -71,97 +71,52 @@ export default function ConversationsScreen() {
       socket.emit("join", currentUser.id);
     });
 
-    const loadUserById = async (clerkId: string): Promise<User> => {
-      try {
-        const res = await fetch(`${API_URL}/users/${clerkId}`);
-        const data: User = await res.json();
-        return data;
-      } catch {
-        return { clerkId, username: "Usuário", displayName: "Usuário" };
-      }
-    };
-
-    socket.on("message", async (msg: Message) => {
-      console.log("📨 Mensagem recebida:", msg);
-
+    const handleIncomingMessage = async (msg: Message) => {
       setMessages((prev) => {
         if (prev.find((m) => m._id === msg._id)) return prev;
         return [...prev, msg];
       });
 
-      const otherUserId =
-        msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
+      const otherUserId = msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
-      let realUser = allUsers.find((u) => u.clerkId === otherUserId);
-      if (!realUser) {
-        realUser = await loadUserById(otherUserId);
-        setAllUsers((prev) => [...prev, realUser!]);
-      }
-
-      setUsers((prev) => {
-        const exists = prev.find((u) => u.clerkId === otherUserId);
-
-        if (exists) {
-          return prev
-            .map((u) =>
-              u.clerkId === otherUserId
-                ? {
-                    ...u,
-                    lastMessage: msg,
-                    unread: selectedUser?.clerkId !== otherUserId,
-                    messages: [...(u.messages || []), msg],
-                  }
-                : u
-            )
-            .sort(sortByLastMessage);
-        } else {
-          return [
-            {
-              ...realUser!,
-              lastMessage: msg,
-              unread: selectedUser?.clerkId !== otherUserId,
-              messages: [msg],
-            },
-            ...prev,
-          ].sort(sortByLastMessage);
+      if (!allUsers.find((u) => u.clerkId === otherUserId)) {
+        try {
+          const res = await fetch(`${API_URL}/users/${otherUserId}`);
+          const userData: User = await res.json();
+          setAllUsers((prev) => [...prev, userData]);
+        } catch (err) {
+          console.error("Erro fetch usuário do socket:", err);
         }
-      });
-    });
+      }
+    };
+
+    socket.on("message", handleIncomingMessage);
 
     return () => {
+      socket.off("message", handleIncomingMessage);
       socket.disconnect();
     };
-  }, [currentUser, allUsers, selectedUser]);
+  }, [currentUser]);
 
   /* ================= HELPERS ================= */
   const sortByLastMessage = (a: User, b: User) => {
-    const aTime = a.lastMessage
-      ? new Date(a.lastMessage.createdAt).getTime()
-      : 0;
-    const bTime = b.lastMessage
-      ? new Date(b.lastMessage.createdAt).getTime()
-      : 0;
+    const aTime = a.lastMessage ? new Date(a.lastMessage.createdAt).getTime() : 0;
+    const bTime = b.lastMessage ? new Date(b.lastMessage.createdAt).getTime() : 0;
     return bTime - aTime;
   };
 
-  const fetchWithTimeout = (url: string, options = {}, timeout = 10000) => {
-    return Promise.race([
+  const fetchWithTimeout = (url: string, options = {}, timeout = 10000) =>
+    Promise.race([
       fetch(url, options),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), timeout)
-      ),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), timeout)),
     ]) as Promise<Response>;
-  };
 
   /* ================= LOAD USERS ================= */
   const loadUsers = useCallback(async () => {
     if (!currentUser) return;
 
     try {
-      const res = await fetchWithTimeout(
-        `${API_URL}/users?exclude=${currentUser.id}`
-      );
-
+      const res = await fetchWithTimeout(`${API_URL}/users?exclude=${currentUser.id}`);
       const data: User[] = await res.json();
       setAllUsers(data);
 
@@ -171,16 +126,9 @@ export default function ConversationsScreen() {
             const resMsg = await fetchWithTimeout(
               `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
             );
-
             const msgs: Message[] = await resMsg.json();
             const last = msgs[msgs.length - 1];
-
-            return {
-              ...user,
-              lastMessage: last || null,
-              messages: msgs || [],
-              unread: false,
-            };
+            return { ...user, lastMessage: last || null, messages: msgs || [], unread: false };
           } catch {
             return { ...user, lastMessage: null, messages: [], unread: false };
           }
@@ -203,12 +151,10 @@ export default function ConversationsScreen() {
 
   const loadMessages = async (user: User) => {
     if (!currentUser) return;
-
     try {
       const res = await fetchWithTimeout(
         `${API_URL}/messages?user1=${currentUser.id}&user2=${user.clerkId}`
       );
-
       const data: Message[] = await res.json();
       setMessages(data);
     } catch (err) {
@@ -241,37 +187,23 @@ export default function ConversationsScreen() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-
       const realMsg = await res.json();
-      setMessages((prev) =>
-        prev.map((m) => (m._id === tempMessage._id ? realMsg : m))
-      );
+      setMessages((prev) => prev.map((m) => (m._id === tempMessage._id ? realMsg : m)));
     } catch (err) {
       console.error("Erro sendMessage", err);
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      loadUsers();
-    }, [loadUsers])
-  );
+  useFocusEffect(useCallback(() => { loadUsers(); }, [loadUsers]));
 
   const openChat = (user: User) => {
     setSelectedUser(user);
     setChatVisible(true);
-
-    if (user.messages?.length) setMessages(user.messages);
-    else loadMessages(user);
-
-    setUsers((prev) =>
-      prev.map((u) => (u.clerkId === user.clerkId ? { ...u, unread: false } : u))
-    );
+    setMessages(user.messages || []);
+    setUsers((prev) => prev.map((u) => (u.clerkId === user.clerkId ? { ...u, unread: false } : u)));
   };
 
-  const getDisplayName = (user: User | null) =>
-    user?.displayName || user?.username || "Usuário";
-
+  const getDisplayName = (user: User | null) => user?.displayName || user?.username || "Usuário";
   const getAvatar = (user: User | null) => user?.avatar || null;
 
   const copyMessage = async (content: string) => {
@@ -280,21 +212,12 @@ export default function ConversationsScreen() {
   };
 
   const displayedUsers = searchText
-    ? allUsers.filter((u) =>
-        (u.displayName || u.username)
-          .toLowerCase()
-          .includes(searchText.toLowerCase())
-      )
+    ? allUsers.filter((u) => (u.displayName || u.username).toLowerCase().includes(searchText.toLowerCase()))
     : users;
 
   return (
     <View style={styles.container}>
-      <Text
-        style={[
-          styles.headerTitle,
-          { paddingTop: insets.top + 20, paddingHorizontal: 16 },
-        ]}
-      >
+      <Text style={[styles.headerTitle, { paddingTop: insets.top + 20, paddingHorizontal: 16 }]}>
         Mensagens
       </Text>
 
@@ -315,10 +238,7 @@ export default function ConversationsScreen() {
         maxToRenderPerBatch={20}
         windowSize={10}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.userItem}
-            onPress={() => openChat(item)}
-          >
+          <TouchableOpacity style={styles.userItem} onPress={() => openChat(item)}>
             {getAvatar(item) ? (
               <Image source={{ uri: getAvatar(item)! }} style={styles.avatar} />
             ) : (
@@ -326,13 +246,10 @@ export default function ConversationsScreen() {
                 <Feather name="user" size={22} color="#999" />
               </View>
             )}
-
             <View style={{ flex: 1 }}>
               <Text style={styles.name}>{getDisplayName(item)}</Text>
               {item.lastMessage && (
-                <Text style={styles.lastMessage} numberOfLines={1}>
-                  {item.lastMessage.content}
-                </Text>
+                <Text style={styles.lastMessage} numberOfLines={1}>{item.lastMessage.content}</Text>
               )}
             </View>
           </TouchableOpacity>
@@ -340,17 +257,12 @@ export default function ConversationsScreen() {
       />
 
       <Modal visible={chatVisible} animationType="slide">
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.chatHeader}>
             <TouchableOpacity onPress={() => setChatVisible(false)}>
               <Feather name="arrow-left" size={20} />
             </TouchableOpacity>
-            <Text style={styles.chatTitle}>
-              {getDisplayName(selectedUser)}
-            </Text>
+            <Text style={styles.chatTitle}>{getDisplayName(selectedUser)}</Text>
           </View>
 
           <FlatList
@@ -361,28 +273,13 @@ export default function ConversationsScreen() {
             initialNumToRender={20}
             maxToRenderPerBatch={20}
             windowSize={10}
-            onContentSizeChange={() =>
-              setTimeout(
-                () => flatListRef.current?.scrollToEnd({ animated: true }),
-                50
-              )
-            }
+            onContentSizeChange={() => setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50)}
             renderItem={({ item }) => {
               const isMe = item.senderId === currentUser?.id;
               return (
-                <TouchableOpacity
-                  onPress={() => copyMessage(item.content)}
-                  style={[
-                    styles.bubble,
-                    {
-                      alignSelf: isMe ? "flex-end" : "flex-start",
-                      backgroundColor: isMe ? "#000" : "#e5e5e5",
-                    },
-                  ]}
-                >
-                  <Text style={{ color: isMe ? "#fff" : "#000" }}>
-                    {item.content}
-                  </Text>
+                <TouchableOpacity onPress={() => copyMessage(item.content)}
+                  style={[styles.bubble, { alignSelf: isMe ? "flex-end" : "flex-start", backgroundColor: isMe ? "#000" : "#e5e5e5" }]}>
+                  <Text style={{ color: isMe ? "#fff" : "#000" }}>{item.content}</Text>
                 </TouchableOpacity>
               );
             }}
@@ -411,16 +308,7 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
   userItem: { flexDirection: "row", padding: 16, alignItems: "center" },
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
-  avatarPlaceholder: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14,
-  },
+  avatarPlaceholder: { width: 50, height: 50, borderRadius: 25, borderWidth: 1, borderColor: "#ddd", justifyContent: "center", alignItems: "center", marginRight: 14 },
   name: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
@@ -429,16 +317,6 @@ const styles = StyleSheet.create({
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
   input: { flex: 1, borderWidth: 1, borderRadius: 20, paddingHorizontal: 16 },
   send: { backgroundColor: "#000", borderRadius: 20, padding: 10, marginLeft: 8 },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginHorizontal: 16,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 20,
-    height: 40,
-  },
+  searchContainer: { flexDirection: "row", alignItems: "center", marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 10, borderWidth: 1, borderColor: "#ddd", borderRadius: 20, height: 40 },
   searchInput: { flex: 1, fontSize: 14, marginLeft: 8 },
 });
