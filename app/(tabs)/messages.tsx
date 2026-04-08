@@ -60,7 +60,7 @@ export default function ConversationsScreen() {
     if (!currentUser) return;
 
     const socket = io(API_URL, {
-      transports: ["websocket"], // 🔥 FIX APK
+      transports: ["websocket"],
       reconnection: true,
       reconnectionAttempts: 5,
     });
@@ -72,30 +72,38 @@ export default function ConversationsScreen() {
       socket.emit("join", currentUser.id);
     });
 
-    socket.on("connect_error", (err: any) => {
-      console.log("❌ Socket connect_error:", err.message);
-    });
+    const loadUserById = async (clerkId: string): Promise<User> => {
+      try {
+        const res = await fetch(`${API_URL}/users/${clerkId}`);
+        const data: User = await res.json();
+        return data;
+      } catch {
+        return { clerkId, username: "Usuário", displayName: "Usuário" };
+      }
+    };
 
-    socket.on("disconnect", () => {
-      console.log("⚪ Socket desconectado");
-    });
-
-    socket.on("message", (msg: Message) => {
+    socket.on("message", async (msg: Message) => {
       console.log("📨 Mensagem recebida:", msg);
 
+      // evita duplicação
       setMessages((prev) => {
-        const exists = prev.find((m) => m._id === msg._id);
-        if (exists) return prev;
+        if (prev.find((m) => m._id === msg._id)) return prev;
         return [...prev, msg];
       });
 
       const otherUserId =
         msg.senderId === currentUser.id ? msg.receiverId : msg.senderId;
 
-      setUsers((prev) => {
-        const existsUser = prev.find((u) => u.clerkId === otherUserId);
+      let realUser = allUsers.find((u) => u.clerkId === otherUserId);
+      if (!realUser) {
+        realUser = await loadUserById(otherUserId);
+        setAllUsers((prev) => [...prev, realUser!]);
+      }
 
-        if (existsUser) {
+      setUsers((prev) => {
+        const exists = prev.find((u) => u.clerkId === otherUserId);
+
+        if (exists) {
           return prev
             .map((u) =>
               u.clerkId === otherUserId
@@ -107,27 +115,17 @@ export default function ConversationsScreen() {
                   }
                 : u
             )
-            .sort((a, b) => {
-              const aTime = a.lastMessage
-                ? new Date(a.lastMessage.createdAt).getTime()
-                : 0;
-              const bTime = b.lastMessage
-                ? new Date(b.lastMessage.createdAt).getTime()
-                : 0;
-              return bTime - aTime;
-            });
+            .sort(sortByLastMessage);
         } else {
           return [
             {
-              clerkId: otherUserId,
-              username: "Usuário",
-              displayName: "Usuário",
+              ...realUser!,
               lastMessage: msg,
               unread: selectedUser?.clerkId !== otherUserId,
               messages: [msg],
             },
             ...prev,
-          ];
+          ].sort(sortByLastMessage);
         }
       });
     });
@@ -135,9 +133,19 @@ export default function ConversationsScreen() {
     return () => {
       socket.disconnect();
     };
-  }, [currentUser]); // 🔥 REMOVIDO selectedUser (BUG DO APK)
+  }, [currentUser, allUsers, selectedUser]);
 
-  /* ================= FETCH COM TIMEOUT ================= */
+  /* ================= HELPERS ================= */
+  const sortByLastMessage = (a: User, b: User) => {
+    const aTime = a.lastMessage
+      ? new Date(a.lastMessage.createdAt).getTime()
+      : 0;
+    const bTime = b.lastMessage
+      ? new Date(b.lastMessage.createdAt).getTime()
+      : 0;
+    return bTime - aTime;
+  };
+
   const fetchWithTimeout = (url: string, options = {}, timeout = 10000) => {
     return Promise.race([
       fetch(url, options),
@@ -181,19 +189,21 @@ export default function ConversationsScreen() {
         })
       );
 
-      setUsers(
-        usersWithLast
-          .filter((u) => u.lastMessage)
-          .sort((a, b) => {
-            const aTime = a.lastMessage
-              ? new Date(a.lastMessage.createdAt).getTime()
-              : 0;
-            const bTime = b.lastMessage
-              ? new Date(b.lastMessage.createdAt).getTime()
-              : 0;
-            return bTime - aTime;
-          })
-      );
+      // merge (não sobrescreve)
+      setUsers((prev) => {
+        const merged = [...prev];
+
+        usersWithLast.forEach((u) => {
+          const index = merged.findIndex((p) => p.clerkId === u.clerkId);
+          if (index >= 0) {
+            merged[index] = { ...merged[index], ...u };
+          } else {
+            merged.push(u);
+          }
+        });
+
+        return merged.sort(sortByLastMessage);
+      });
     } catch (err) {
       console.error("Erro loadUsers", err);
     }
@@ -214,7 +224,7 @@ export default function ConversationsScreen() {
     }
   };
 
-  /* ================= SEND MESSAGE ================= */
+  /* ================= SEND ================= */
   const sendMessage = async () => {
     if (!currentUser || !selectedUser || !inputText.trim()) return;
 
@@ -230,7 +240,7 @@ export default function ConversationsScreen() {
       createdAt: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, tempMessage]); // 🔥 instantâneo
+    setMessages((prev) => [...prev, tempMessage]);
     setInputText("");
 
     try {
@@ -260,7 +270,7 @@ export default function ConversationsScreen() {
     setSelectedUser(user);
     setChatVisible(true);
 
-    if (user.messages && user.messages.length > 0) {
+    if (user.messages?.length) {
       setMessages(user.messages);
     } else {
       loadMessages(user);
@@ -303,7 +313,7 @@ export default function ConversationsScreen() {
       </Text>
 
       <View style={styles.searchContainer}>
-        <Feather name="search" size={20} color="#999" style={{ marginHorizontal: 8 }} />
+        <Feather name="search" size={20} color="#999" />
         <TextInput
           style={styles.searchInput}
           placeholder="Pesquisar usuários..."
@@ -313,40 +323,30 @@ export default function ConversationsScreen() {
       </View>
 
       <FlatList
-        data={displayedUsers.sort((a, b) => {
-          const aTime = a.lastMessage
-            ? new Date(a.lastMessage.createdAt).getTime()
-            : 0;
-          const bTime = b.lastMessage
-            ? new Date(b.lastMessage.createdAt).getTime()
-            : 0;
-          return bTime - aTime;
-        })}
+        data={[...displayedUsers].sort(sortByLastMessage)}
         keyExtractor={(i) => i.clerkId}
         renderItem={({ item }) => (
-          <View style={styles.userItem}>
-            <TouchableOpacity
-              style={{ flexDirection: "row", alignItems: "center", flex: 1 }}
-              onPress={() => openChat(item)}
-            >
-              {getAvatar(item) ? (
-                <Image source={{ uri: getAvatar(item)! }} style={styles.avatar} />
-              ) : (
-                <View style={styles.avatarPlaceholder}>
-                  <Feather name="user" size={22} color="#999" />
-                </View>
-              )}
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{getDisplayName(item)}</Text>
-                {item.lastMessage && (
-                  <Text style={styles.lastMessage} numberOfLines={1}>
-                    {item.lastMessage.content}
-                  </Text>
-                )}
+          <TouchableOpacity
+            style={styles.userItem}
+            onPress={() => openChat(item)}
+          >
+            {getAvatar(item) ? (
+              <Image source={{ uri: getAvatar(item)! }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Feather name="user" size={22} color="#999" />
               </View>
-            </TouchableOpacity>
-          </View>
+            )}
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{getDisplayName(item)}</Text>
+              {item.lastMessage && (
+                <Text style={styles.lastMessage} numberOfLines={1}>
+                  {item.lastMessage.content}
+                </Text>
+              )}
+            </View>
+          </TouchableOpacity>
         )}
       />
 
@@ -410,16 +410,19 @@ export default function ConversationsScreen() {
   );
 }
 
+/* ================= STYLES ================= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   headerTitle: { fontSize: 24, fontWeight: "700", marginBottom: 12 },
+
   userItem: {
     flexDirection: "row",
     padding: 16,
     alignItems: "center",
-    justifyContent: "space-between",
   },
+
   avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 14 },
+
   avatarPlaceholder: {
     width: 50,
     height: 50,
@@ -430,29 +433,36 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginRight: 14,
   },
+
   name: { fontSize: 16, fontWeight: "600" },
   lastMessage: { fontSize: 14, color: "#666", marginTop: 2 },
+
   chatHeader: { flexDirection: "row", alignItems: "center", padding: 10 },
   chatTitle: { marginLeft: 10, fontWeight: "700", fontSize: 16 },
+
   bubble: {
     padding: 12,
     borderRadius: 16,
     marginBottom: 8,
     maxWidth: "90%",
   },
+
   inputRow: { flexDirection: "row", alignItems: "center", padding: 8 },
+
   input: {
     flex: 1,
     borderWidth: 1,
     borderRadius: 20,
     paddingHorizontal: 16,
   },
+
   send: {
     backgroundColor: "#000",
     borderRadius: 20,
     padding: 10,
     marginLeft: 8,
   },
+
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -464,5 +474,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     height: 40,
   },
-  searchInput: { flex: 1, fontSize: 14 },
+
+  searchInput: { flex: 1, fontSize: 14, marginLeft: 8 },
 });
