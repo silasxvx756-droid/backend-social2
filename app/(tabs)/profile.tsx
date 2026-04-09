@@ -18,7 +18,6 @@ import { Feather } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 
-import PostsList from "@/components/PostsList";
 import { useProfile } from "@/hooks/useProfile";
 
 const HEADER_OFFSET = 10;
@@ -38,8 +37,6 @@ export default function ProfileScreen() {
   const { formData, updateFormField } = useProfile();
   const insets = useSafeAreaInsets();
 
-  // ------------------- STATES -------------------
-  const [postsCount, setPostsCount] = useState(0);
   const [followers, setFollowers] = useState<FollowUser[]>([]);
   const [following, setFollowing] = useState<FollowUser[]>([]);
   const [loadingFollow, setLoadingFollow] = useState(false);
@@ -92,25 +89,8 @@ export default function ProfileScreen() {
     useCallback(() => {
       fetchFollowers();
       fetchFollowing();
-      fetchPostsCount();
     }, [fetchFollowers, fetchFollowing])
   );
-
-  // ------------------- POSTS COUNT -------------------
-  const fetchPostsCount = useCallback(async () => {
-    if (!user) return;
-    try {
-      const res = await fetch(`${API_URL}/users/${user.id}`);
-      const data = await res.json();
-      setPostsCount(data.posts || 0);
-    } catch (err) {
-      console.log("Erro ao buscar contador de posts:", err);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchPostsCount();
-  }, [fetchPostsCount]);
 
   // ------------------- HANDLERS -------------------
   const handleFollowClick = (type: "followers" | "following") => {
@@ -121,21 +101,11 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = async () => {
-    let logOutput = "==== LOG DE LOGOUT ====\n";
     try {
-      logOutput += "Botão Sair clicado!\n";
-
       await clerk.signOut();
-      logOutput += "Logout realizado com sucesso!\n";
-
       router.replace("/(auth)");
-
-      logOutput += "Navegou para (auth)/index.tsx.\n";
     } catch (err) {
-      logOutput += `Erro ao tentar sair: ${err}\n`;
-    } finally {
-      logOutput += "====================\n";
-      console.log(logOutput);
+      console.log("Erro ao tentar sair:", err);
     }
   };
 
@@ -186,7 +156,6 @@ export default function ProfileScreen() {
             {formData.firstName || "Usuário"}
           </Text>
 
-          {/* EDIT PROFILE BUTTON */}
           <TouchableOpacity
             onPress={() => router.push("/EditProfile")}
             style={{
@@ -199,42 +168,10 @@ export default function ProfileScreen() {
           >
             <Text style={{ color: "#000", fontWeight: "600" }}>Editar Perfil</Text>
           </TouchableOpacity>
-
-          {/* STATS OCULTOS */}
-          {/*
-          <View
-            style={{
-              flexDirection: "row",
-              justifyContent: "space-between",
-              width: "80%",
-              marginVertical: 12,
-            }}
-          >
-            {[
-              { label: "posts", value: postsCount },
-              { label: "seguidores", value: followers.length, type: "followers" },
-              { label: "seguindo", value: following.length, type: "following" },
-            ].map((item) => (
-              <TouchableOpacity
-                key={item.label}
-                style={{ alignItems: "center", flex: 1 }}
-                disabled={!item.type}
-                onPress={() => item.type && handleFollowClick(item.type)}
-              >
-                <Text style={{ fontSize: 18, fontWeight: "700", color: "#000" }}>{item.value}</Text>
-                <Text style={{ fontSize: 12, color: "#666" }}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          */}
         </View>
 
-        {/* POSTS */}
-        {user ? (
-          <PostsList username={user.id} showNewPostButton={false} />
-        ) : (
-          <ActivityIndicator size="large" color="#000" style={{ marginTop: 24 }} />
-        )}
+        {/* FEED OCULTO */}
+        {/* <PostsList username={user?.id} showNewPostButton={false} /> */}
       </ScrollView>
 
       {/* FOLLOW MODAL */}

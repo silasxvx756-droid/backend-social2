@@ -1,5 +1,5 @@
 // PostsList.tsx
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   FlatList,
   View,
@@ -13,6 +13,7 @@ import {
   Alert,
   Modal,
   TextInput,
+  Linking,
 } from "react-native";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
@@ -22,11 +23,27 @@ import { useNavigation, useFocusEffect } from "@react-navigation/native";
 
 const API_URL = "https://backend-social-app-1.onrender.com";
 const { width } = Dimensions.get("window");
+
+// ID da postagem que será propaganda
 const AD_POST_ID = "69d4cec46935552434b0556b";
 
-// Componente de anúncio
+// 🔥 Anúncio otimizado com botão de mensagem
 const AdItem = React.memo(({ post }: any) => {
   if (!post) return null;
+
+  const handleSendMessage = () => {
+    const url = "https://w.app/conectdesigner";
+    Linking.canOpenURL(url)
+      .then((supported) => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          alert("Não foi possível abrir o link");
+        }
+      })
+      .catch((err) => console.error("Erro ao abrir link:", err));
+  };
+
   return (
     <View style={styles.adContainer}>
       <View style={styles.postCard}>
@@ -41,6 +58,7 @@ const AdItem = React.memo(({ post }: any) => {
             </View>
           </View>
         </View>
+
         {post.image && (
           <Image
             source={{ uri: post.image }}
@@ -49,8 +67,17 @@ const AdItem = React.memo(({ post }: any) => {
             cachePolicy="memory-disk"
           />
         )}
+
         <View style={styles.contentPadding}>
           {post.content && <Text style={{ marginTop: 6 }}>{post.content}</Text>}
+
+          {/* Botão de enviar mensagem */}
+          <TouchableOpacity
+            style={styles.messageBtn}
+            onPress={handleSendMessage}
+          >
+            <Text style={styles.messageBtnText}>Enviar Mensagem</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -69,11 +96,6 @@ export default function PostsList({
   const [posts, setPosts] = useState(initialPosts);
   const [loading, setLoading] = useState(!initialPosts.length);
   const [refreshing, setRefreshing] = useState(false);
-  const [fetching, setFetching] = useState(false);
-  const [page, setPage] = useState(0);
-  const [hasMore, setHasMore] = useState(true);
-  const [onEndReachedCalledDuringMomentum, setOnEndReachedCalledDuringMomentum] = useState(true);
-
   const [modalVisible, setModalVisible] = useState(false);
   const [content, setContent] = useState("");
   const [image, setImage] = useState<any>(null);
@@ -87,7 +109,9 @@ export default function PostsList({
 
   const currentUser = {
     id: user?.id,
-    username: user?.username || user?.primaryEmailAddress?.emailAddress?.split("@")[0],
+    username:
+      user?.username ||
+      user?.primaryEmailAddress?.emailAddress?.split("@")[0],
     displayName: user?.fullName || user?.firstName || "Usuário",
     avatar: user?.imageUrl,
   };
@@ -104,50 +128,37 @@ export default function PostsList({
     return past.toLocaleDateString();
   };
 
-  const fetchPosts = async (reset = false) => {
-    if (fetching || (!hasMore && !reset)) return;
-    setFetching(true);
-    setLoading(reset);
-
+  const fetchPosts = async () => {
     try {
-      const currentPage = reset ? 0 : page;
-      const res = await fetch(`${API_URL}/posts?skip=${currentPage * 10}&limit=10`);
+      setLoading(true);
+      const res = await fetch(`${API_URL}/posts`);
       const data = await res.json();
 
       const filtered = username ? data.filter((p: any) => p.actor?.id === username) : data;
+
       const postsWithLiked = (filtered || []).map((p: any) => ({
         ...p,
         likedByMe: p.likes?.some((u: any) => u.id === currentUser.id),
       }));
 
-      if (reset) {
-        setPosts(postsWithLiked);
-        setPage(1);
-        setHasMore(postsWithLiked.length === 10);
-      } else {
-        setPosts((prev) => [...prev, ...postsWithLiked]);
-        setPage(currentPage + 1);
-        setHasMore(postsWithLiked.length === 10);
-      }
-
+      setPosts(postsWithLiked);
       if (onPostAction) onPostAction(postsWithLiked);
     } catch (e) {
       console.log("Erro fetchPosts:", e);
     } finally {
-      setFetching(false);
       setLoading(false);
     }
   };
 
   useFocusEffect(
     useCallback(() => {
-      fetchPosts(true);
+      fetchPosts();
     }, [username])
   );
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchPosts(true);
+    await fetchPosts();
     setRefreshing(false);
   };
 
@@ -183,11 +194,12 @@ export default function PostsList({
       }
       const res = await fetch(`${API_URL}/posts/upload`, { method: "POST", body: form });
       const newPost = await res.json();
-      setPosts((prev) => [newPost, ...prev]);
+      const newPosts = [newPost, ...posts];
+      setPosts(newPosts);
       setModalVisible(false);
       setContent("");
       setImage(null);
-      if (onPostAction) onPostAction([newPost, ...posts]);
+      if (onPostAction) onPostAction(newPosts);
     } catch {
       Alert.alert("Erro ao postar");
     } finally {
@@ -218,7 +230,7 @@ export default function PostsList({
         body: JSON.stringify({ user: currentUser }),
       });
     } catch {
-      fetchPosts(true);
+      fetchPosts();
     } finally {
       setLikingPostId(null);
     }
@@ -233,8 +245,9 @@ export default function PostsList({
         onPress: async () => {
           try {
             await fetch(`${API_URL}/posts/${postId}`, { method: "DELETE" });
-            setPosts((prev) => prev.filter((p) => p._id !== postId));
-            if (onPostAction) onPostAction(posts.filter((p) => p._id !== postId));
+            const updatedPosts = posts.filter((p) => p._id !== postId);
+            setPosts(updatedPosts);
+            if (onPostAction) onPostAction(updatedPosts);
           } catch {
             Alert.alert("Erro ao apagar");
           }
@@ -251,6 +264,7 @@ export default function PostsList({
 
   const handleComment = async () => {
     if (!commentText.trim() || !selectedPost) return;
+
     try {
       const res = await fetch(`${API_URL}/posts/${selectedPost._id}/comments`, {
         method: "POST",
@@ -258,7 +272,19 @@ export default function PostsList({
         body: JSON.stringify({ user: currentUser, text: commentText }),
       });
       const newComment = await res.json();
+
+      // Atualiza o state de comentários do modal
       setComments((prev) => [...prev, newComment]);
+
+      // Atualiza o array de posts principal
+      setPosts((prevPosts) =>
+        prevPosts.map((p) =>
+          p._id === selectedPost._id
+            ? { ...p, comments: [...(p.comments || []), newComment] }
+            : p
+        )
+      );
+
       setCommentText("");
     } catch {
       Alert.alert("Erro ao comentar");
@@ -289,10 +315,7 @@ export default function PostsList({
             </View>
 
             {item.actor?.id === currentUser.id && (
-              <TouchableOpacity
-                onPress={() => handleDeletePost(item._id)}
-                style={{ marginLeft: "auto" }}
-              >
+              <TouchableOpacity onPress={() => handleDeletePost(item._id)} style={{ marginLeft: "auto" }}>
                 <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
               </TouchableOpacity>
             )}
@@ -300,22 +323,13 @@ export default function PostsList({
         </View>
 
         {item.image && (
-          <Image
-            source={{ uri: item.image }}
-            style={styles.postImage}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
+          <Image source={{ uri: item.image }} style={styles.postImage} contentFit="cover" cachePolicy="memory-disk" />
         )}
 
         <View style={styles.contentPadding}>
           <View style={styles.actionsRow}>
             <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item._id)}>
-              <Ionicons
-                name={item.likedByMe ? "heart" : "heart-outline"}
-                size={22}
-                color={item.likedByMe ? "#ff3040" : "#222"}
-              />
+              <Ionicons name={item.likedByMe ? "heart" : "heart-outline"} size={22} color={item.likedByMe ? "#ff3040" : "#222"} />
               <Text style={styles.count}>{item.likes?.length || 0}</Text>
             </TouchableOpacity>
 
@@ -336,18 +350,21 @@ export default function PostsList({
     );
   };
 
-  if (loading && posts.length === 0)
-    return <ActivityIndicator size="large" color="#007AFF" style={{ marginTop: 20 }} />;
+  if (loading)
+    return (
+      <ActivityIndicator
+        size="large"
+        color="#007AFF"
+        style={{ marginTop: 20 }}
+        indeterminate={true}
+      />
+    );
 
   return (
     <View style={{ flex: 1 }}>
       {showNewPostButton && (
         <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() =>
-              navigation.navigate("PostCreate", { onPostCreated: () => fetchPosts(true) })
-            }
-          >
+          <TouchableOpacity onPress={() => navigation.navigate("PostCreate", { onPostCreated: fetchPosts })}>
             <Ionicons name="add" size={32} />
           </TouchableOpacity>
         </View>
@@ -371,14 +388,6 @@ export default function PostsList({
             progressBackgroundColor="#fff"
           />
         }
-        onEndReached={() => {
-          if (!fetching && hasMore && !onEndReachedCalledDuringMomentum) {
-            fetchPosts();
-            setOnEndReachedCalledDuringMomentum(true);
-          }
-        }}
-        onEndReachedThreshold={0.5}
-        onMomentumScrollBegin={() => setOnEndReachedCalledDuringMomentum(false)}
       />
 
       <Modal visible={commentsModal} animationType="slide">
@@ -412,10 +421,7 @@ export default function PostsList({
                 placeholder="Comentário..."
                 style={[styles.input, { marginRight: 8 }]}
               />
-              <TouchableOpacity
-                onPress={handleComment}
-                style={{ backgroundColor: "#000", padding: 10, borderRadius: 20 }}
-              >
+              <TouchableOpacity onPress={handleComment} style={{ backgroundColor: "#000", padding: 10, borderRadius: 20 }}>
                 <Ionicons name="send" size={20} color="#fff" />
               </TouchableOpacity>
             </View>
@@ -441,16 +447,21 @@ const styles = StyleSheet.create({
   count: { fontSize: 12 },
 
   adContainer: { padding: 0, marginBottom: 16, backgroundColor: "#fff" },
+  messageBtn: {
+    marginTop: 12,
+    backgroundColor: "#007AFF",
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignItems: "center",
+  },
+  messageBtnText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
 
   commentsHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
   commentsTitle: { fontWeight: "700", fontSize: 18 },
   commentAvatar: { width: 32, height: 32, borderRadius: 16 },
-  input: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    height: 40,
-  },
+  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 20, paddingHorizontal: 12, height: 40 },
 });

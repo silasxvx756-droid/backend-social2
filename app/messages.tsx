@@ -72,6 +72,7 @@ export default function ConversationsScreen() {
     });
 
     const handleIncomingMessage = (msg: Message) => {
+      // evita duplicados por _id ou mesmo conteúdo do remetente
       setMessages((prev) => {
         if (
           prev.some(
@@ -176,7 +177,7 @@ export default function ConversationsScreen() {
       content: inputText.trim(),
     };
 
-    setInputText("");
+    setInputText(""); // limpa input imediatamente
 
     try {
       const res = await fetchWithTimeout(`${API_URL}/messages`, {
@@ -186,7 +187,7 @@ export default function ConversationsScreen() {
       });
       const realMsg = await res.json();
 
-      setMessages((prev) => [...prev, realMsg]);
+      setMessages((prev) => [...prev, realMsg]); // adiciona apenas a real do servidor
     } catch (err) {
       console.error("Erro sendMessage", err);
     }
@@ -213,11 +214,8 @@ export default function ConversationsScreen() {
     Alert.alert("Mensagem copiada!", content);
   };
 
-  // 🔹 Pesquisa agora filtra apenas usuários que já têm histórico de mensagens
   const displayedUsers = searchText
-    ? users.filter((u) =>
-        (u.displayName || u.username).toLowerCase().includes(searchText.toLowerCase())
-      )
+    ? allUsers.filter((u) => (u.displayName || u.username).toLowerCase().includes(searchText.toLowerCase()))
     : users;
 
   return (
