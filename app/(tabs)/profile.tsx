@@ -156,6 +156,21 @@ export default function ProfileScreen() {
             {formData.firstName || "Usuário"}
           </Text>
 
+          {/* BIO */}
+          <Text style={{ marginTop: 8, color: "#555", textAlign: "center" }}>
+            {formData.bio || "Sem biografia"}
+          </Text>
+
+          {/* CIDADE */}
+          <Text style={{ marginTop: 4, color: "#777" }}>
+            📍 {formData.city || "Cidade não informada"}
+          </Text>
+
+          {/* WHATSAPP */}
+          <Text style={{ marginTop: 4, color: "#25D366", fontWeight: "600" }}>
+            WhatsApp: {formData.whatsapp || "Não informado"}
+          </Text>
+
           <TouchableOpacity
             onPress={() => router.push("/EditProfile")}
             style={{
@@ -169,9 +184,6 @@ export default function ProfileScreen() {
             <Text style={{ color: "#000", fontWeight: "600" }}>Editar Perfil</Text>
           </TouchableOpacity>
         </View>
-
-        {/* FEED OCULTO */}
-        {/* <PostsList username={user?.id} showNewPostButton={false} /> */}
       </ScrollView>
 
       {/* FOLLOW MODAL */}
@@ -208,9 +220,9 @@ export default function ProfileScreen() {
                     source={{ uri: item.avatar || "https://via.placeholder.com/40" }}
                     style={{ width: 40, height: 40, borderRadius: 20, marginRight: 12 }}
                   />
-                  <View>
-                    <Text style={{ color: "#000", fontWeight: "600" }}>{item.displayName}</Text>
-                  </View>
+                  <Text style={{ color: "#000", fontWeight: "600" }}>
+                    {item.displayName}
+                  </Text>
                 </View>
               )}
             />

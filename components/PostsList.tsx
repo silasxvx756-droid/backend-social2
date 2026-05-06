@@ -1,438 +1,459 @@
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  FlatList,
   View,
-  TouchableOpacity,
   Text,
+  FlatList,
+  TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
   SafeAreaView,
-  Dimensions,
-  RefreshControl,
   Alert,
+  Image,
+  Linking,
   Modal,
   TextInput,
-  Linking,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from "react-native";
-import { Image } from "expo-image";
-import * as ImagePicker from "expo-image-picker";
-import { useUser } from "@clerk/clerk-expo";
-import { Ionicons } from "@expo/vector-icons";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { Picker } from "@react-native-picker/picker";
 
 const API_URL = "https://backend-social-app-1.onrender.com";
-const { width } = Dimensions.get("window");
 
-// ID da postagem que será propaganda
-const AD_POST_ID = "69d4cec46935552434b0556b";
+type Job = {
+  _id: string;
+  typeItem: "job";
+  title: string;
+  company: string;
+  location: string;
+  type: string;
+  description: string;
+  whatsapp: string;
+};
 
-// 🔥 Anúncio otimizado
-const AdItem = React.memo(({ post }: any) => {
-  if (!post) return null;
+type Ad = {
+  id: string;
+  typeItem: "ad";
+  image: string;
+};
 
-  const handleSendMessage = () => {
-    const url = "https://w.app/conectdesigner";
-    Linking.canOpenURL(url)
-      .then((supported) => {
-        if (supported) {
-          Linking.openURL(url);
-        } else {
-          alert("Não foi possível abrir o link");
-        }
-      })
-      .catch((err) => console.error("Erro ao abrir link:", err));
-  };
+type ListItem = Job | Ad;
 
-  return (
-    <View style={styles.adContainer}>
-      <View style={styles.postCard}>
-        <View style={styles.contentPadding}>
-          <View style={styles.postHeader}>
-            <Image source={{ uri: post.actor.avatar }} style={styles.postAvatar} />
-            <View style={styles.nameRowHorizontal}>
-              <Text style={styles.postUsername}>{post.actor.displayName}</Text>
-              <Text style={styles.postTimeHorizontal}>
-                {post.createdAt ? new Date(post.createdAt).toLocaleDateString() : ""}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {post.image && (
-          <Image
-            source={{ uri: post.image }}
-            style={styles.postImage}
-            contentFit="cover"
-            cachePolicy="memory-disk"
-          />
-        )}
-
-        <View style={styles.contentPadding}>
-          {post.content && <Text style={{ marginTop: 6 }}>{post.content}</Text>}
-          <TouchableOpacity
-            style={styles.messageBtn}
-            onPress={handleSendMessage}
-          >
-            <Text style={styles.messageBtnText}>Enviar Mensagem</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-});
-
-export default function PostsList({
-  username,
-  showNewPostButton = true,
-  initialPosts = [],
-  onPostAction,
-}: any) {
-  const { user } = useUser();
-  const navigation = useNavigation<any>();
-
-  const [posts, setPosts] = useState(initialPosts);
-  const [loading, setLoading] = useState(!initialPosts.length);
-  const [refreshing, setRefreshing] = useState(false);
+export default function JobsScreen() {
+  const [data, setData] = useState<ListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [appliedJobs, setAppliedJobs] = useState<string[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
-  const [content, setContent] = useState("");
-  const [image, setImage] = useState<any>(null);
-  const [posting, setPosting] = useState(false);
-  const [likingPostId, setLikingPostId] = useState<string | null>(null);
 
-  const [commentsModal, setCommentsModal] = useState(false);
-  const [selectedPost, setSelectedPost] = useState<any>(null);
-  const [comments, setComments] = useState<any[]>([]);
-  const [commentText, setCommentText] = useState("");
+  const [category, setCategory] = useState("");
+  const [company, setCompany] = useState("");
+  const [location, setLocation] = useState("");
+  const [type, setType] = useState("");
+  const [description, setDescription] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
 
-  const currentUser = {
-    id: user?.id,
-    username:
-      user?.username ||
-      user?.primaryEmailAddress?.emailAddress?.split("@")[0],
-    displayName: user?.fullName || user?.firstName || "Usuário",
-    avatar: user?.imageUrl,
-  };
-
-  const formatTime = (date: string) => {
-    if (!date) return "";
-    const now = new Date();
-    const past = new Date(date);
-    const diff = Math.floor((now.getTime() - past.getTime()) / 1000);
-    if (diff < 60) return "agora";
-    if (diff < 3600) return `${Math.floor(diff / 60)} min`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} h`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)} d`;
-    return past.toLocaleDateString();
-  };
-
-  const fetchPosts = async () => {
+  // ================= FETCH JOBS =================
+  const fetchJobs = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/posts`);
-      const data = await res.json();
 
-      const filtered = username ? data.filter((p: any) => p.actor?.id === username) : data;
+      const res = await fetch(`${API_URL}/jobs`);
+      const json = await res.json();
 
-      const postsWithLiked = (filtered || []).map((p: any) => ({
-        ...p,
-        likedByMe: p.likes?.some((u: any) => u.id === currentUser.id),
+      console.log("API /jobs =>", json);
+
+      const jobsArray = Array.isArray(json)
+        ? json
+        : json?.jobs || [];
+
+      if (!jobsArray.length) {
+        setData([
+          {
+            _id: "empty",
+            typeItem: "job",
+            title: "Nenhuma vaga disponível",
+            company: "Sistema",
+            location: "-",
+            type: "-",
+            description: "Ainda não existem vagas cadastradas no banco.",
+            whatsapp: "5599999999999",
+          },
+        ]);
+        return;
+      }
+
+      const formatted: Job[] = jobsArray.map((job: any) => ({
+        _id: job._id,
+        typeItem: "job",
+        title: job.title,
+        company: job.company,
+        location: job.location,
+        type: job.type,
+        description: job.description,
+        whatsapp: job.whatsapp,
       }));
 
-      setPosts(postsWithLiked);
-      if (onPostAction) onPostAction(postsWithLiked);
-    } catch (e) {
-      console.log("Erro fetchPosts:", e);
+      const mixed: ListItem[] = [];
+
+      formatted.forEach((job, index) => {
+        mixed.push(job);
+
+        if ((index + 1) % 5 === 0) {
+          mixed.push({
+            id: "ad-" + index,
+            typeItem: "ad",
+            image: "https://via.placeholder.com/400x200.png?text=Anuncio",
+          });
+        }
+      });
+
+      setData(mixed);
+    } catch (err) {
+      console.log("Erro fetchJobs:", err);
+
+      setData([
+        {
+          _id: "error",
+          typeItem: "job",
+          title: "Erro ao carregar vagas",
+          company: "API offline",
+          location: "-",
+          type: "-",
+          description: "Verifique conexão com o backend /jobs",
+          whatsapp: "5599999999999",
+        },
+      ]);
     } finally {
       setLoading(false);
     }
   };
 
-  useFocusEffect(
-    useCallback(() => {
-      fetchPosts();
-    }, [username])
-  );
+  useEffect(() => {
+    fetchJobs();
+  }, []);
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchPosts();
-    setRefreshing(false);
+  // ================= APPLY =================
+  const handleApply = (id: string) => {
+    if (appliedJobs.includes(id)) return;
+    setAppliedJobs((prev) => [...prev, id]);
+    Alert.alert("Sucesso", "Você se candidatou!");
   };
 
-  // ✅ CORRIGIDO PARA O GOOGLE PLAY: Sem pedido de permissão explícito
-  const pickImage = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 1,
-        allowsEditing: true,
-      });
+  // ================= WHATSAPP =================
+  const handleMessage = (phone: string) => {
+    const url = `https://wa.me/${phone.replace(/\D/g, "")}`;
+    Linking.openURL(url);
+  };
 
-      if (!result.canceled) {
-        const asset = result.assets[0];
-        setImage({ uri: asset.uri, width: asset.width, height: asset.height });
-      }
-    } catch (e) {
-      console.log("Erro ao selecionar imagem:", e);
+  // ================= CREATE JOB =================
+  const handlePublishJob = async () => {
+    if (!category || !company || !description || !type || !whatsapp) {
+      Alert.alert("Erro", "Preencha todos os campos obrigatórios");
+      return;
     }
-  };
 
-  const handleCreatePost = async () => {
-    if (!content.trim() && !image) return;
     try {
-      setPosting(true);
-      const form = new FormData();
-      form.append("title", "Post");
-      form.append("content", content);
-      form.append("actor", JSON.stringify(currentUser));
-      if (image) {
-        const uriParts = image.uri.split(".");
-        const fileType = uriParts[uriParts.length - 1];
-        form.append("image", {
-          uri: image.uri,
-          name: `photo.${fileType}`,
-          type: `image/${fileType === "jpg" ? "jpeg" : fileType}`,
-        } as any);
-      }
-      const res = await fetch(`${API_URL}/posts/upload`, { method: "POST", body: form });
-      const newPost = await res.json();
-      const newPosts = [newPost, ...posts];
-      setPosts(newPosts);
-      setModalVisible(false);
-      setContent("");
-      setImage(null);
-      if (onPostAction) onPostAction(newPosts);
-    } catch {
-      Alert.alert("Erro ao postar");
-    } finally {
-      setPosting(false);
-    }
-  };
-
-  const handleLike = async (postId: string) => {
-    if (likingPostId) return;
-    setLikingPostId(postId);
-    setPosts((prev) =>
-      prev.map((p) =>
-        p._id === postId
-          ? {
-              ...p,
-              likedByMe: !p.likedByMe,
-              likes: p.likedByMe
-                ? p.likes.filter((u: any) => u.id !== currentUser.id)
-                : [...(p.likes || []), currentUser],
-            }
-          : p
-      )
-    );
-    try {
-      await fetch(`${API_URL}/posts/${postId}/like`, {
+      const res = await fetch(`${API_URL}/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: currentUser }),
+        body: JSON.stringify({
+          title: category,
+          company,
+          location: location || "Não informado",
+          type,
+          description,
+          whatsapp,
+        }),
       });
-    } catch {
-      fetchPosts();
-    } finally {
-      setLikingPostId(null);
-    }
-  };
 
-  const handleDeletePost = async (postId: string) => {
-    Alert.alert("Apagar postagem", "Tem certeza?", [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Apagar",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await fetch(`${API_URL}/posts/${postId}`, { method: "DELETE" });
-            const updatedPosts = posts.filter((p) => p._id !== postId);
-            setPosts(updatedPosts);
-            if (onPostAction) onPostAction(updatedPosts);
-          } catch {
-            Alert.alert("Erro ao apagar");
-          }
+      const newJob = await res.json();
+
+      setData((prev) => [
+        {
+          _id: newJob._id,
+          typeItem: "job",
+          title: newJob.title,
+          company: newJob.company,
+          location: newJob.location,
+          type: newJob.type,
+          description: newJob.description,
+          whatsapp: newJob.whatsapp,
         },
-      },
-    ]);
-  };
+        ...prev,
+      ]);
 
-  const openComments = (post: any) => {
-    setSelectedPost(post);
-    setComments(post.comments || []);
-    setCommentsModal(true);
-  };
+      setModalVisible(false);
 
-  const handleComment = async () => {
-    if (!commentText.trim() || !selectedPost) return;
-    try {
-      const res = await fetch(`${API_URL}/posts/${selectedPost._id}/comments`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user: currentUser, text: commentText }),
-      });
-      const newComment = await res.json();
-      setComments((prev) => [...prev, newComment]);
-      setPosts((prevPosts) =>
-        prevPosts.map((p) =>
-          p._id === selectedPost._id
-            ? { ...p, comments: [...(p.comments || []), newComment] }
-            : p
-        )
-      );
-      setCommentText("");
-    } catch {
-      Alert.alert("Erro ao comentar");
+      setCategory("");
+      setCompany("");
+      setLocation("");
+      setType("");
+      setDescription("");
+      setWhatsapp("");
+
+      Alert.alert("Sucesso", "Vaga publicada!");
+    } catch (err) {
+      Alert.alert("Erro", "Não foi possível publicar");
     }
   };
 
-  const adPost = posts.find((p) => p._id === AD_POST_ID);
-  const mixedData = useMemo(() => {
-    return posts.flatMap((post, index) =>
-      (index + 1) % 5 === 0 && adPost ? [post, { type: "ad", ...adPost }] : [post]
-    );
-  }, [posts, adPost]);
+  // ================= RENDER =================
+  const renderItem = ({ item }: { item: ListItem }) => {
+    if (item.typeItem === "ad") {
+      return (
+        <View style={styles.adCard}>
+          <Image source={{ uri: item.image }} style={styles.adImage} />
+          <TouchableOpacity
+            style={styles.adButton}
+            onPress={() => handleMessage("5599999999999")}
+          >
+            <Text style={styles.buttonText}>Enviar mensagem</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
-  const renderItem = ({ item }: any) => {
-    if (item.type === "ad") return <AdItem post={item} />;
-    const displayName =
-      item.actor?.id === currentUser.id ? currentUser.displayName : item.actor?.displayName;
+    const applied = appliedJobs.includes(item._id);
 
     return (
-      <View style={styles.postCard}>
-        <View style={styles.contentPadding}>
-          <View style={styles.postHeader}>
-            <Image source={{ uri: item.actor?.avatar }} style={styles.postAvatar} />
-            <View style={styles.nameRowHorizontal}>
-              <Text style={styles.postUsername}>{displayName}</Text>
-              <Text style={styles.postTimeHorizontal}>{formatTime(item.createdAt)}</Text>
-            </View>
-            {item.actor?.id === currentUser.id && (
-              <TouchableOpacity onPress={() => handleDeletePost(item._id)} style={{ marginLeft: "auto" }}>
-                <Text style={{ fontSize: 20, color: "#999" }}>⋯</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+      <View style={styles.card}>
+        <Text style={styles.title}>{item.title}</Text>
+        <Text style={styles.company}>{item.company}</Text>
+        <Text style={styles.location}>📍 {item.location}</Text>
+        <Text style={styles.description}>{item.description}</Text>
 
-        {item.image && (
-          <Image source={{ uri: item.image }} style={styles.postImage} contentFit="cover" cachePolicy="memory-disk" />
-        )}
+        <Text style={styles.typeBadge}>{item.type}</Text>
 
-        <View style={styles.contentPadding}>
-          <View style={styles.actionsRow}>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => handleLike(item._id)}>
-              <Ionicons name={item.likedByMe ? "heart" : "heart-outline"} size={22} color={item.likedByMe ? "#ff3040" : "#222"} />
-              <Text style={styles.count}>{item.likes?.length || 0}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionBtn} onPress={() => openComments(item)}>
-              <Ionicons name="chatbubble-outline" size={20} />
-              <Text style={styles.count}>{item.comments?.length || 0}</Text>
-            </TouchableOpacity>
-          </View>
-          {item.content?.trim().length > 0 && (
-            <Text style={{ marginTop: 6 }}>
-              <Text style={{ fontWeight: "600" }}>{displayName} </Text>
-              {item.content}
-            </Text>
-          )}
-        </View>
+        <TouchableOpacity
+          style={styles.adButton}
+          onPress={() => handleMessage(item.whatsapp)}
+        >
+          <Text style={styles.buttonText}>WhatsApp</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.button, applied && { backgroundColor: "#28a745" }]}
+          onPress={() => handleApply(item._id)}
+          disabled={applied}
+        >
+          <Text style={styles.buttonText}>
+            {applied ? "Candidatado" : "Candidatar"}
+          </Text>
+        </TouchableOpacity>
       </View>
     );
   };
 
-  if (loading)
+  // ================= UI =================
+  if (loading) {
     return (
-      <ActivityIndicator
-        size="large"
-        color="#007AFF"
-        style={{ marginTop: 20 }}
-      />
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" />
+      </View>
     );
+  }
 
   return (
-    <View style={{ flex: 1 }}>
-      {showNewPostButton && (
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.navigate("PostCreate", { onPostCreated: fetchPosts })}>
-            <Ionicons name="add" size={32} />
-          </TouchableOpacity>
-        </View>
-      )}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.topBar}>
+        <Text style={styles.headerTitle}>Vagas</Text>
+
+        <TouchableOpacity
+          style={styles.publishButton}
+          onPress={() => setModalVisible(true)}
+        >
+          <Text style={styles.publishText}>+ Publicar</Text>
+        </TouchableOpacity>
+      </View>
 
       <FlatList
-        data={mixedData}
-        keyExtractor={(item: any, index) => item._id || item.id || index.toString()}
+        data={data}
+        keyExtractor={(item: any) => item._id || item.id}
         renderItem={renderItem}
-        initialNumToRender={5}
-        maxToRenderPerBatch={5}
-        windowSize={5}
-        removeClippedSubviews
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#007AFF"]} />
-        }
       />
 
-      <Modal visible={commentsModal} animationType="slide">
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={{ flex: 1, padding: 16 }}>
-            <View style={styles.commentsHeader}>
-              <Text style={styles.commentsTitle}>Comentários</Text>
-              <TouchableOpacity onPress={() => setCommentsModal(false)}>
-                <Ionicons name="close" size={24} />
-              </TouchableOpacity>
-            </View>
-            <FlatList
-              data={comments}
-              keyExtractor={(item) => item._id}
-              renderItem={({ item }) => (
-                <View style={{ flexDirection: "row", marginBottom: 12 }}>
-                  <Image source={{ uri: item.user.avatar }} style={styles.commentAvatar} />
-                  <View style={{ flex: 1, marginLeft: 8 }}>
-                    <Text style={{ fontWeight: "700" }}>{item.user.displayName}</Text>
-                    <Text>{item.text}</Text>
+      {/* MODAL */}
+      <Modal visible={modalVisible} animationType="fade" transparent>
+        <TouchableWithoutFeedback onPress={() => setModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <KeyboardAvoidingView
+                behavior={Platform.OS === "ios" ? "padding" : undefined}
+                style={styles.modalBox}
+              >
+                <ScrollView>
+                  <Text style={styles.modalTitle}>Publicar vaga</Text>
+
+                  <View style={styles.pickerContainer}>
+                    <Picker selectedValue={category} onValueChange={setCategory}>
+                      <Picker.Item label="Categoria *" value="" />
+                      <Picker.Item label="Frontend" value="Frontend" />
+                      <Picker.Item label="Backend" value="Backend" />
+                      <Picker.Item label="Fullstack" value="Fullstack" />
+                    </Picker>
                   </View>
-                </View>
-              )}
-            />
-            <View style={{ flexDirection: "row", marginTop: 8 }}>
-              <TextInput
-                value={commentText}
-                onChangeText={setCommentText}
-                placeholder="Comentário..."
-                style={[styles.input, { marginRight: 8 }]}
-              />
-              <TouchableOpacity onPress={handleComment} style={{ backgroundColor: "#000", padding: 10, borderRadius: 20 }}>
-                <Ionicons name="send" size={20} color="#fff" />
-              </TouchableOpacity>
-            </View>
+
+                  <TextInput
+                    placeholder="Empresa *"
+                    style={styles.input}
+                    value={company}
+                    onChangeText={setCompany}
+                  />
+
+                  <TextInput
+                    placeholder="Localização"
+                    style={styles.input}
+                    value={location}
+                    onChangeText={setLocation}
+                  />
+
+                  <View style={styles.pickerContainer}>
+                    <Picker selectedValue={type} onValueChange={setType}>
+                      <Picker.Item label="Tipo *" value="" />
+                      <Picker.Item label="CLT" value="CLT" />
+                      <Picker.Item label="PJ" value="PJ" />
+                    </Picker>
+                  </View>
+
+                  <TextInput
+                    placeholder="Descrição *"
+                    style={[styles.input, { height: 100 }]}
+                    multiline
+                    value={description}
+                    onChangeText={setDescription}
+                  />
+
+                  <TextInput
+                    placeholder="WhatsApp"
+                    style={styles.input}
+                    value={whatsapp}
+                    onChangeText={setWhatsapp}
+                    keyboardType="phone-pad"
+                  />
+
+                  <TouchableOpacity
+                    style={styles.publishButton}
+                    onPress={handlePublishJob}
+                  >
+                    <Text style={styles.publishText}>Publicar</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            </TouchableWithoutFeedback>
           </View>
-        </SafeAreaView>
+        </TouchableWithoutFeedback>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
+/* ================= STYLES ================= */
+
 const styles = StyleSheet.create({
-  header: { flexDirection: "row", justifyContent: "flex-end", padding: 12 },
-  postCard: { marginBottom: 16, backgroundColor: "#fff" },
-  postHeader: { flexDirection: "row", alignItems: "center" },
-  postAvatar: { width: 32, height: 32, borderRadius: 16 },
-  nameRowHorizontal: { flexDirection: "row", alignItems: "center", marginLeft: 8, gap: 6 },
-  postUsername: { fontWeight: "700", fontSize: 14 },
-  postTimeHorizontal: { fontSize: 12, color: "#555" },
-  postImage: { width: "100%", height: width, marginVertical: 8 },
-  contentPadding: { padding: 12 },
-  actionsRow: { flexDirection: "row", marginTop: 6, gap: 16 },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 6 },
-  count: { fontSize: 12 },
-  adContainer: { padding: 0, marginBottom: 16, backgroundColor: "#fff" },
-  messageBtn: { marginTop: 12, backgroundColor: "#007AFF", paddingVertical: 8, borderRadius: 20, alignItems: "center" },
-  messageBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  commentsHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 12 },
-  commentsTitle: { fontWeight: "700", fontSize: 18 },
-  commentAvatar: { width: 32, height: 32, borderRadius: 16 },
-  input: { flex: 1, borderWidth: 1, borderColor: "#ccc", borderRadius: 20, paddingHorizontal: 12, height: 40 },
+  container: { flex: 1, padding: 16 },
+
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+
+  headerTitle: { fontSize: 20, fontWeight: "bold" },
+
+  publishButton: {
+    backgroundColor: "#28a745",
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+
+  publishText: { color: "#fff", fontWeight: "bold" },
+
+  card: {
+    backgroundColor: "#fff",
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+
+  title: { fontWeight: "bold", fontSize: 16 },
+  company: { color: "#666" },
+  location: { marginTop: 5 },
+  description: { marginTop: 5 },
+
+  typeBadge: {
+    marginTop: 6,
+    alignSelf: "flex-start",
+    backgroundColor: "#eee",
+    padding: 6,
+    borderRadius: 6,
+  },
+
+  button: {
+    marginTop: 10,
+    backgroundColor: "#007bff",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
+  buttonText: { color: "#fff" },
+
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  adCard: {
+    backgroundColor: "#fff",
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+
+  adImage: { width: "100%", height: 150, borderRadius: 10 },
+
+  adButton: {
+    marginTop: 10,
+    backgroundColor: "#25D366",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 16,
+  },
+
+  modalBox: {
+    width: "100%",
+    maxWidth: 420,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 20,
+  },
+
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+
+  pickerContainer: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 8,
+    marginBottom: 10,
+    overflow: "hidden",
+  },
 });
