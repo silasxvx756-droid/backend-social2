@@ -36,7 +36,6 @@ export default function EditProfileScreen() {
         firstName: user.firstName || "",
       });
 
-      // Sync backend (opcional)
       fetch(`${API}/users/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -62,39 +61,37 @@ export default function EditProfileScreen() {
     return (ImagePicker as any).MediaTypeOptions.Images;
   };
 
+  // ✅ CORRIGIDO (SEM PERMISSÃO MANUAL)
   const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: getMediaType(),
+        allowsEditing: false,
+        quality: 1,
+      });
 
-    if (status !== "granted") {
-      Alert.alert("Permissão necessária", "Libere acesso à galeria.");
-      return;
-    }
+      if (!result.canceled && result.assets?.length > 0) {
+        const localUri = result.assets[0].uri;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: getMediaType(),
-      allowsEditing: false,
-      quality: 1,
-    });
+        setImageUploading(true);
 
-    if (!result.canceled && result.assets?.length > 0) {
-      const localUri = result.assets[0].uri;
-
-      setImageUploading(true);
-
-      try {
-        await user?.setProfileImage({
-          file: {
-            uri: localUri,
-            name: "avatar.jpg",
-            type: "image/jpeg",
-          } as any,
-        });
-      } catch (error) {
-        console.error("Erro upload:", error);
-        Alert.alert("Erro", "Falha ao enviar imagem");
-      } finally {
-        setImageUploading(false);
+        try {
+          await user?.setProfileImage({
+            file: {
+              uri: localUri,
+              name: "avatar.jpg",
+              type: "image/jpeg",
+            } as any,
+          });
+        } catch (error) {
+          console.error("Erro upload:", error);
+          Alert.alert("Erro", "Falha ao enviar imagem");
+        } finally {
+          setImageUploading(false);
+        }
       }
+    } catch (error) {
+      console.error("Erro ao abrir galeria:", error);
     }
   };
 
@@ -105,8 +102,7 @@ export default function EditProfileScreen() {
         firstName: formData.firstName,
       });
 
-      // Fecha a tela ou modal sem alertas
-      navigation.goBack(); // ou navigation.dismiss() se estiver em modal
+      navigation.goBack();
     } catch (error) {
       console.error(error);
       Alert.alert("Erro", "Não foi possível salvar");
@@ -123,7 +119,6 @@ export default function EditProfileScreen() {
         backgroundColor: isDarkMode ? "#000" : "#fff",
       }}
     >
-      {/* BOTÃO X */}
       <TouchableOpacity
         onPress={() => navigation.goBack()}
         style={{ position: "absolute", top: insets.top + 16, right: 16, zIndex: 10 }}
@@ -195,7 +190,9 @@ export default function EditProfileScreen() {
           alignItems: "center",
         }}
       >
-        <Text style={{ color: isDarkMode ? "#000" : "#fff" }}>Salvar</Text>
+        <Text style={{ color: isDarkMode ? "#000" : "#fff" }}>
+          Salvar
+        </Text>
       </TouchableOpacity>
     </View>
   );

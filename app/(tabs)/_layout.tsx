@@ -6,39 +6,51 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth, useUser } from "@clerk/clerk-expo";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import axios from "axios";
+import * as NavigationBar from "expo-navigation-bar";
 
 import { useUserSync } from "../../hooks/useUserSync";
 
-const API_URL = "http://192.168.0.103:3000";
+const API_URL = "https://backend-social-app-1.onrender.com";
 
 const TabsLayout = () => {
-  // ------------------- CLERK / USER -------------------
   const { isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
-  useUserSync(); // sincroniza dados do usuário
+  useUserSync();
 
-  // ------------------- HOOKS -------------------
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [hasNewMessages, setHasNewMessages] = useState(false);
 
-  // ------------------- KEYBOARD LISTENERS -------------------
+  // ------------------- Android Navigation Bar fix -------------------
   useEffect(() => {
-    const showSub = Keyboard.addListener("keyboardDidShow", () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
+    NavigationBar.setBackgroundColorAsync("#FFF");
+    NavigationBar.setButtonStyleAsync("dark");
+  }, []);
+
+  // ------------------- Keyboard -------------------
+  useEffect(() => {
+    const showSub = Keyboard.addListener("keyboardDidShow", () =>
+      setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener("keyboardDidHide", () =>
+      setKeyboardVisible(false)
+    );
+
     return () => {
       showSub.remove();
       hideSub.remove();
     };
   }, []);
 
-  // ------------------- CHECK NOVAS MENSAGENS -------------------
+  // ------------------- Messages -------------------
   const checkNewMessages = async () => {
     if (!user?.id) return;
     try {
-      const res = await axios.get(`${API_URL}/api/messages/unread/${user.id}`);
+      const res = await axios.get(
+        `${API_URL}/api/messages/unread/${user.id}`
+      );
       setHasNewMessages(res.data.unreadCount > 0);
     } catch (err) {
       console.error("Erro ao buscar mensagens não lidas:", err);
@@ -47,17 +59,18 @@ const TabsLayout = () => {
 
   useEffect(() => {
     const interval = setInterval(() => checkNewMessages(), 5000);
-    checkNewMessages(); // fetch inicial
+    checkNewMessages();
     return () => clearInterval(interval);
   }, [user?.id]);
 
-  // reseta ponto vermelho ao entrar na aba de mensagens
   useEffect(() => {
-    const unsubscribe = navigation.addListener("focus", () => setHasNewMessages(false));
+    const unsubscribe = navigation.addListener("focus", () =>
+      setHasNewMessages(false)
+    );
     return () => unsubscribe();
   }, [navigation]);
 
-  // ------------------- RENDER LOADING / REDIRECT -------------------
+  // ------------------- Loading / Auth -------------------
   if (!isLoaded) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -70,24 +83,31 @@ const TabsLayout = () => {
     return <Redirect href="/(auth)/login" />;
   }
 
-  const backgroundColor = "#FFF"; // cor fixa sem dark mode
+  const backgroundColor = "#FFF";
 
-  // ------------------- TABS -------------------
+  // ------------------- Tabs -------------------
   return (
     <Tabs
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: false,
+
         tabBarStyle: {
           display: keyboardVisible ? "none" : "flex",
           backgroundColor,
+
           borderTopWidth: 0.5,
-          borderTopColor: "#E5E7EB", // cor fixa clara
+          borderTopColor: "#E5E7EB",
+
           height: 55 + insets.bottom,
           paddingBottom: insets.bottom,
+
+          // 🔥 Android fix (remove black bar/shadow)
+          elevation: 0,
+          shadowOpacity: 0,
         },
+
         tabBarIcon: ({ focused, color }) => {
-          // PROFILE
           if (route.name === "profile") {
             if (user?.imageUrl) {
               return (
@@ -103,10 +123,15 @@ const TabsLayout = () => {
                 />
               );
             }
-            return <Ionicons name="person-outline" size={24} color={focused ? "#000" : color} />;
+            return (
+              <Ionicons
+                name="person-outline"
+                size={24}
+                color={focused ? "#000" : color}
+              />
+            );
           }
 
-          // NOTIFICATIONS
           if (route.name === "notifications") {
             return (
               <Ionicons
@@ -117,7 +142,6 @@ const TabsLayout = () => {
             );
           }
 
-          // MESSAGES
           if (route.name === "messages") {
             return (
               <View>
@@ -143,7 +167,6 @@ const TabsLayout = () => {
             );
           }
 
-          // OUTROS ICONES
           let iconName = "";
           switch (route.name) {
             case "index":
@@ -159,7 +182,13 @@ const TabsLayout = () => {
               iconName = "ellipse";
           }
 
-          return <Ionicons name={iconName as any} size={24} color={focused ? "#000" : color} />;
+          return (
+            <Ionicons
+              name={iconName as any}
+              size={24}
+              color={focused ? "#000" : color}
+            />
+          );
         },
       })}
     >
