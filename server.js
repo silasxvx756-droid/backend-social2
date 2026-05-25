@@ -579,6 +579,19 @@ app.post(
   }
 );
 
+// TESTE PAYMENT
+
+app.get(
+  "/payment",
+  (req, res) => {
+    res.json({
+      success: true,
+      message:
+        "Rota payment funcionando 🚀",
+    });
+  }
+);
+
 // LISTAR PAGAMENTOS
 
 app.get(
