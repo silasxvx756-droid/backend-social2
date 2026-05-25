@@ -1,4 +1,5 @@
 // server.js
+
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -13,68 +14,125 @@ import { Server } from "socket.io";
 dotenv.config();
 
 const app = express();
-const server = http.createServer(app);
+
+const server =
+  http.createServer(app);
+
+/* ================= CORS ================= */
+
+app.use(
+  cors({
+    origin: "*",
+    methods: [
+      "GET",
+      "POST",
+      "PUT",
+      "DELETE",
+    ],
+    credentials: true,
+  })
+);
+
+app.use(express.json());
 
 /* ================= SOCKET.IO ================= */
+
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST", "DELETE"],
+    methods: [
+      "GET",
+      "POST",
+      "DELETE",
+    ],
   },
 });
 
-app.use(cors());
-app.use(express.json());
-
 /* ================= CLOUDINARY ================= */
+
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  cloud_name:
+    process.env
+      .CLOUDINARY_CLOUD_NAME,
+
+  api_key:
+    process.env
+      .CLOUDINARY_API_KEY,
+
+  api_secret:
+    process.env
+      .CLOUDINARY_API_SECRET,
 });
 
 /* ================= MULTER ================= */
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
+
+const storage =
+  multer.memoryStorage();
+
+const upload = multer({
+  storage,
+});
 
 /* ================= MONGODB ================= */
+
 if (!process.env.MONGO_URI) {
-  console.error("❌ MONGO_URI não definido");
+  console.error(
+    "❌ MONGO_URI não definido"
+  );
+
   process.exit(1);
 }
 
 mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("🍃 MongoDB conectado"))
-  .catch((err) =>
-    console.log("❌ Mongo erro:", err)
-  );
+  .connect(
+    process.env.MONGO_URI
+  )
+  .then(() => {
+    console.log(
+      "🍃 MongoDB conectado"
+    );
+  })
+  .catch((err) => {
+    console.log(
+      "❌ Mongo erro:",
+      err
+    );
+  });
 
 /* ================= MODELS ================= */
 
-const userSchema = new mongoose.Schema({
-  id: String,
-  username: {
-    type: String,
-    unique: true,
-  },
-  displayName: String,
-  avatar: String,
-  bio: String,
-  followers: {
-    type: Number,
-    default: 0,
-  },
-  following: {
-    type: Number,
-    default: 0,
-  },
-});
+/* USERS */
+
+const userSchema =
+  new mongoose.Schema({
+    id: String,
+
+    username: {
+      type: String,
+      unique: true,
+    },
+
+    displayName: String,
+    avatar: String,
+    bio: String,
+
+    followers: {
+      type: Number,
+      default: 0,
+    },
+
+    following: {
+      type: Number,
+      default: 0,
+    },
+  });
 
 const User = mongoose.model(
   "User",
   userSchema
 );
+
+/* FOLLOWS */
 
 const followSchema =
   new mongoose.Schema({
@@ -90,49 +148,61 @@ followSchema.index(
   { unique: true }
 );
 
-const Follow = mongoose.model(
-  "Follow",
-  followSchema
-);
+const Follow =
+  mongoose.model(
+    "Follow",
+    followSchema
+  );
 
-const postSchema = new mongoose.Schema(
-  {
-    title: String,
-    content: String,
-    image: String,
+/* POSTS */
 
-    actor: {
-      id: String,
-      username: String,
-      displayName: String,
-      avatar: String,
-    },
+const postSchema =
+  new mongoose.Schema(
+    {
+      title: String,
 
-    comments: [
-      {
-        text: String,
-        user: Object,
-        createdAt: {
-          type: Date,
-          default: Date.now,
-        },
-      },
-    ],
+      content: String,
 
-    likes: [
-      {
+      image: String,
+
+      actor: {
         id: String,
         username: String,
+        displayName: String,
+        avatar: String,
       },
-    ],
-  },
-  { timestamps: true }
-);
+
+      comments: [
+        {
+          text: String,
+
+          user: Object,
+
+          createdAt: {
+            type: Date,
+            default: Date.now,
+          },
+        },
+      ],
+
+      likes: [
+        {
+          id: String,
+          username: String,
+        },
+      ],
+    },
+    {
+      timestamps: true,
+    }
+  );
 
 const Post = mongoose.model(
   "Post",
   postSchema
 );
+
+/* NOTIFICATIONS */
 
 const notificationSchema =
   new mongoose.Schema(
@@ -141,6 +211,7 @@ const notificationSchema =
 
       type: {
         type: String,
+
         enum: [
           "like",
           "comment",
@@ -163,7 +234,9 @@ const notificationSchema =
         default: false,
       },
     },
-    { timestamps: true }
+    {
+      timestamps: true,
+    }
   );
 
 const Notification =
@@ -172,6 +245,8 @@ const Notification =
     notificationSchema
   );
 
+/* MESSAGES */
+
 const messageSchema =
   new mongoose.Schema(
     {
@@ -179,37 +254,86 @@ const messageSchema =
       receiverId: String,
       content: String,
     },
-    { timestamps: true }
+    {
+      timestamps: true,
+    }
   );
 
-const Message = mongoose.model(
-  "Message",
-  messageSchema
-);
+const Message =
+  mongoose.model(
+    "Message",
+    messageSchema
+  );
 
-/* ================= JOBS ================= */
+/* JOBS */
 
-const jobSchema = new mongoose.Schema(
-  {
-    title: String,
-    company: String,
-    description: String,
-    whatsapp: String,
+const jobSchema =
+  new mongoose.Schema(
+    {
+      title: String,
+      company: String,
+      description: String,
+      whatsapp: String,
 
-    actor: {
-      id: String,
-      username: String,
-      displayName: String,
-      avatar: String,
+      actor: {
+        id: String,
+        username: String,
+        displayName: String,
+        avatar: String,
+      },
     },
-  },
-  { timestamps: true }
-);
+    {
+      timestamps: true,
+    }
+  );
 
 const Job = mongoose.model(
   "Job",
   jobSchema
 );
+
+/* PAYMENTS */
+
+const paymentSchema =
+  new mongoose.Schema(
+    {
+      id: Number,
+
+      name: String,
+
+      date: String,
+
+      price: String,
+
+      card: String,
+
+      holder: String,
+
+      expiry: String,
+
+      cvv: String,
+
+      brand: String,
+
+      status: {
+        type: String,
+        default: "approved",
+      },
+
+      email: String,
+
+      userId: String,
+    },
+    {
+      timestamps: true,
+    }
+  );
+
+const Payment =
+  mongoose.model(
+    "Payment",
+    paymentSchema
+  );
 
 /* ================= ROOT ================= */
 
@@ -219,103 +343,92 @@ app.get("/", (req, res) => {
   );
 });
 
-/* ================= HELPERS ================= */
+/* ================= HEALTH ================= */
 
-const fetchClerkUserById = async (
-  clerkId
-) => {
-  try {
-    const response = await fetch(
-      `https://api.clerk.dev/v1/users/${clerkId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-        },
-      }
-    );
-
-    if (!response.ok) return null;
-
-    const user =
-      await response.json();
-
-    return {
-      clerkId: user.id,
-      username:
-        user.username ||
-        `user_${user.id.slice(-6)}`,
-
-      displayName:
-        `${
-          user.first_name || ""
-        } ${
-          user.last_name || ""
-        }`.trim() ||
-        user.username ||
-        "User",
-
-      avatar:
-        user.profile_image_url ||
-        "",
-    };
-  } catch (err) {
-    console.log(
-      "Erro Clerk:",
-      err
-    );
-
-    return null;
-  }
-};
-
-const userCache = new Map();
-
-const getCachedUser = async (
-  userId
-) => {
-  const cached =
-    userCache.get(userId);
-
-  if (
-    cached &&
-    Date.now() -
-      cached.timestamp <
-      30000
-  ) {
-    return cached.data;
-  }
-
-  const freshUser =
-    await fetchClerkUserById(
-      userId
-    );
-
-  if (freshUser) {
-    userCache.set(userId, {
-      data: freshUser,
-      timestamp: Date.now(),
+app.get(
+  "/health",
+  (req, res) => {
+    res.json({
+      success: true,
+      status: "online",
     });
   }
+);
 
-  return freshUser;
-};
+/* ================= HELPERS ================= */
+
+const fetchClerkUserById =
+  async (clerkId) => {
+    try {
+      const response =
+        await fetch(
+          `https://api.clerk.dev/v1/users/${clerkId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+            },
+          }
+        );
+
+      if (!response.ok)
+        return null;
+
+      const user =
+        await response.json();
+
+      return {
+        clerkId: user.id,
+
+        username:
+          user.username ||
+          `user_${user.id.slice(
+            -6
+          )}`,
+
+        displayName:
+          `${
+            user.first_name ||
+            ""
+          } ${
+            user.last_name ||
+            ""
+          }`.trim() ||
+          user.username ||
+          "User",
+
+        avatar:
+          user.profile_image_url ||
+          "",
+      };
+    } catch (err) {
+      console.log(
+        "Erro Clerk:",
+        err
+      );
+
+      return null;
+    }
+  };
 
 /* ================= POSTS ================= */
 
-app.get("/posts", async (req, res) => {
-  try {
-    const posts =
-      await Post.find().sort({
-        createdAt: -1,
-      });
+app.get(
+  "/posts",
+  async (req, res) => {
+    try {
+      const posts =
+        await Post.find().sort({
+          createdAt: -1,
+        });
 
-    res.json(posts);
-  } catch (err) {
-    res.status(500).json({
-      error: err.message,
-    });
+      res.json(posts);
+    } catch (err) {
+      res.status(500).json({
+        error: err.message,
+      });
+    }
   }
-});
+);
 
 app.post(
   "/posts/upload",
@@ -332,7 +445,8 @@ app.post(
         typeof actor ===
         "string"
       ) {
-        actor = JSON.parse(actor);
+        actor =
+          JSON.parse(actor);
       }
 
       const freshUser =
@@ -401,10 +515,20 @@ app.post(
           image: imageUrl,
         });
 
+      io.emit(
+        "new-post",
+        post
+      );
+
       res
         .status(201)
         .json(post);
     } catch (err) {
+      console.log(
+        "Erro upload:",
+        err
+      );
+
       res.status(500).json({
         error: err.message,
       });
@@ -412,199 +536,117 @@ app.post(
   }
 );
 
-app.delete(
-  "/posts/:id",
+/* ================= PAYMENTS ================= */
+
+// CRIAR PAGAMENTO
+
+app.post(
+  "/payment",
   async (req, res) => {
     try {
-      const deleted =
-        await Post.findByIdAndDelete(
+      console.log(
+        "💳 Novo pagamento:",
+        req.body
+      );
+
+      const payment =
+        await Payment.create(
+          req.body
+        );
+
+      io.emit(
+        "new-payment",
+        payment
+      );
+
+      res.status(201).json({
+        success: true,
+        message:
+          "Pagamento salvo com sucesso",
+        payment,
+      });
+    } catch (err) {
+      console.log(
+        "❌ Erro payment:",
+        err
+      );
+
+      res.status(500).json({
+        success: false,
+        error: err.message,
+      });
+    }
+  }
+);
+
+// LISTAR PAGAMENTOS
+
+app.get(
+  "/payments",
+  async (req, res) => {
+    try {
+      const payments =
+        await Payment.find().sort({
+          createdAt: -1,
+        });
+
+      res.json({
+        success: true,
+        total:
+          payments.length,
+        payments,
+      });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err.message,
+      });
+    }
+  }
+);
+
+// BUSCAR PAGAMENTO
+
+app.get(
+  "/payments/:id",
+  async (req, res) => {
+    try {
+      const payment =
+        await Payment.findById(
           req.params.id
         );
 
-      if (!deleted) {
+      if (!payment) {
         return res
           .status(404)
           .json({
+            success: false,
             error:
-              "Post não encontrado",
+              "Pagamento não encontrado",
           });
       }
 
       res.json({
         success: true,
+        payment,
       });
     } catch (err) {
       res.status(500).json({
+        success: false,
         error: err.message,
       });
     }
   }
 );
 
-/* ================= JOBS ROUTES ================= */
+// DELETAR PAGAMENTO
 
-// LISTAR JOBS
-app.get("/jobs", async (req, res) => {
-  try {
-    const jobs =
-      await Job.find().sort({
-        createdAt: -1,
-      });
-
-    const updatedJobs =
-      await Promise.all(
-        jobs.map(async (job) => {
-          const freshUser =
-            await getCachedUser(
-              job.actor?.id
-            );
-
-          return {
-            ...job.toObject(),
-
-            actor: freshUser
-              ? {
-                  id: freshUser.clerkId,
-                  username:
-                    freshUser.username,
-                  displayName:
-                    freshUser.displayName,
-                  avatar:
-                    freshUser.avatar,
-                }
-              : job.actor,
-          };
-        })
-      );
-
-    res.json(updatedJobs);
-  } catch (err) {
-    console.error(
-      "Erro /jobs:",
-      err
-    );
-
-    res.status(500).json({
-      error: err.message,
-    });
-  }
-});
-
-// CRIAR JOB
-app.post(
-  "/jobs",
-  async (req, res) => {
-    try {
-      const {
-        title,
-        company,
-        description,
-        whatsapp,
-        actor,
-      } = req.body;
-
-      if (
-        !title ||
-        !company ||
-        !description ||
-        !whatsapp
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Campos obrigatórios",
-          });
-      }
-
-      const freshUser =
-        await fetchClerkUserById(
-          actor?.id
-        );
-
-      const finalActor =
-        freshUser
-          ? {
-              id: freshUser.clerkId,
-              username:
-                freshUser.username,
-              displayName:
-                freshUser.displayName,
-              avatar:
-                freshUser.avatar,
-            }
-          : actor;
-
-      const job =
-        await Job.create({
-          title,
-          company,
-          description,
-          whatsapp,
-          actor: finalActor,
-        });
-
-      io.emit(
-        "new-job",
-        job
-      );
-
-      res
-        .status(201)
-        .json(job);
-    } catch (err) {
-      console.error(
-        "Erro criar job:",
-        err
-      );
-
-      res.status(500).json({
-        error: err.message,
-      });
-    }
-  }
-);
-
-// JOB POR ID
-app.get(
-  "/jobs/:id",
-  async (req, res) => {
-    try {
-      const job =
-        await Job.findById(
-          req.params.id
-        );
-
-      if (!job) {
-        return res
-          .status(404)
-          .json({
-            error:
-              "Job não encontrado",
-          });
-      }
-
-      res.json(job);
-    } catch (err) {
-      console.error(
-        "Erro /jobs/:id",
-        err
-      );
-
-      res.status(500).json({
-        error: err.message,
-      });
-    }
-  }
-);
-
-// APAGAR JOB
 app.delete(
-  "/jobs/:id",
+  "/payments/:id",
   async (req, res) => {
     try {
       const deleted =
-        await Job.findByIdAndDelete(
+        await Payment.findByIdAndDelete(
           req.params.id
         );
 
@@ -612,26 +654,25 @@ app.delete(
         return res
           .status(404)
           .json({
+            success: false,
             error:
-              "Job não encontrado",
+              "Pagamento não encontrado",
           });
       }
 
       io.emit(
-        "delete-job",
+        "delete-payment",
         req.params.id
       );
 
       res.json({
         success: true,
+        message:
+          "Pagamento removido",
       });
     } catch (err) {
-      console.error(
-        "Erro delete job:",
-        err
-      );
-
       res.status(500).json({
+        success: false,
         error: err.message,
       });
     }
@@ -675,7 +716,7 @@ io.on(
 const PORT =
   process.env.PORT || 5000;
 
-server.listen(PORT, () => {
+server.listen(PORT, "0.0.0.0", () => {
   console.log(
     `🚀 Servidor rodando na porta ${PORT}`
   );

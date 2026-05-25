@@ -16,9 +16,11 @@ import {
 
 import ViewShot from "react-native-view-shot";
 import { useRouter } from "expo-router";
+import { useUser } from "@clerk/clerk-expo";
 
 export default function PaymentScreen() {
   const router = useRouter();
+  const { user } = useUser();
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const receiptRef = useRef<any>(null);
@@ -38,23 +40,36 @@ export default function PaymentScreen() {
 
   const [isLoading, setIsLoading] = useState(false);
 
+  /* ================= ADMIN ================= */
+  const ADMIN_EMAIL = "silasyyyxvx@gmail.com";
+
+  const loggedUserEmail =
+    user?.primaryEmailAddress?.emailAddress || "";
+
+  const isAdmin = loggedUserEmail === ADMIN_EMAIL;
+
   /* ================= DETECT BANDEIRA ================= */
   const detectCardBrand = (number: string) => {
     const cleaned = number.replace(/\D/g, "");
 
     if (/^4/.test(cleaned)) return "Visa";
 
-    if (/^(5[1-5]|2[2-7])/.test(cleaned)) return "Mastercard";
+    if (/^(5[1-5]|2[2-7])/.test(cleaned))
+      return "Mastercard";
 
-    if (/^3[47]/.test(cleaned)) return "American Express";
+    if (/^3[47]/.test(cleaned))
+      return "American Express";
 
     if (
-      /^(4011|4312|4389|4514|4576|5041|5066|5090|6277|6362)/.test(cleaned)
+      /^(4011|4312|4389|4514|4576|5041|5066|5090|6277|6362)/.test(
+        cleaned
+      )
     ) {
       return "Elo";
     }
 
-    if (/^(6062|3841)/.test(cleaned)) return "Hipercard";
+    if (/^(6062|3841)/.test(cleaned))
+      return "Hipercard";
 
     return "Desconhecido";
   };
@@ -63,13 +78,16 @@ export default function PaymentScreen() {
   const formatCardNumber = (text: string) => {
     const cleaned = text.replace(/\D/g, "");
     const limited = cleaned.slice(0, 16);
-    const formatted = limited.replace(/(.{4})/g, "$1 ").trim();
+
+    const formatted = limited
+      .replace(/(.{4})/g, "$1 ")
+      .trim();
 
     setCardNumber(formatted);
     setCardBrand(detectCardBrand(limited));
   };
 
-  /* ================= EXPIRY FORMAT + VALIDATION ================= */
+  /* ================= EXPIRY ================= */
   const formatExpiry = (text: string) => {
     const cleaned = text.replace(/\D/g, "");
     const limited = cleaned.slice(0, 4);
@@ -79,7 +97,10 @@ export default function PaymentScreen() {
     if (limited.length <= 2) {
       formatted = limited;
     } else {
-      formatted = limited.slice(0, 2) + " / " + limited.slice(2);
+      formatted =
+        limited.slice(0, 2) +
+        " / " +
+        limited.slice(2);
     }
 
     setExpiry(formatted);
@@ -89,8 +110,11 @@ export default function PaymentScreen() {
       const year = parseInt(limited.slice(2, 4));
 
       const currentDate = new Date();
-      const currentMonth = currentDate.getMonth() + 1;
-      const currentYear = currentDate.getFullYear() % 100;
+      const currentMonth =
+        currentDate.getMonth() + 1;
+
+      const currentYear =
+        currentDate.getFullYear() % 100;
 
       if (month < 1 || month > 12) {
         setExpiryError("Mês inválido");
@@ -99,7 +123,8 @@ export default function PaymentScreen() {
 
       if (
         year < currentYear ||
-        (year === currentYear && month < currentMonth)
+        (year === currentYear &&
+          month < currentMonth)
       ) {
         setExpiryError("Cartão expirado");
         return;
@@ -188,75 +213,101 @@ export default function PaymentScreen() {
   if (paymentSuccess) {
     return (
       <SafeAreaView style={styles.container}>
-        <ScrollView showsVerticalScrollIndicator={false}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+        >
           <ViewShot ref={receiptRef}>
             <View style={styles.successContainer}>
               <View style={styles.successIcon}>
                 <Text style={styles.check}>✓</Text>
               </View>
 
-              <Text style={styles.successTitle}>
-                Histórico de transações
-              </Text>
+              {isAdmin && (
+                <Text style={styles.successTitle}>
+                  Histórico de transações
+                </Text>
+              )}
 
               <TouchableOpacity
                 style={styles.backButton}
-                onPress={() => setPaymentSuccess(false)}
+                onPress={() =>
+                  setPaymentSuccess(false)
+                }
               >
-                <Text style={styles.backButtonText}>Voltar</Text>
+                <Text style={styles.backButtonText}>
+                  Voltar
+                </Text>
               </TouchableOpacity>
 
-              <View style={styles.historyContainer}>
-                <Text style={styles.historyTitle}>
-                  Últimos pagamentos
-                </Text>
-
-                {payments.length === 0 ? (
-                  <Text style={styles.emptyText}>
-                    Nenhuma transação encontrada
+              {isAdmin && (
+                <View style={styles.historyContainer}>
+                  <Text style={styles.historyTitle}>
+                    Últimos pagamentos
                   </Text>
-                ) : (
-                  payments.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.historyCard}
-                      onPress={() => openPayment(item)}
-                    >
-                      <View>
-                        <Text style={styles.historyName}>
-                          {item.name}
-                        </Text>
 
-                        <Text style={styles.historyDate}>
-                          {item.date}
-                        </Text>
+                  {payments.length === 0 ? (
+                    <Text style={styles.emptyText}>
+                      Nenhuma transação encontrada
+                    </Text>
+                  ) : (
+                    payments.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={styles.historyCard}
+                        onPress={() =>
+                          openPayment(item)
+                        }
+                      >
+                        <View>
+                          <Text
+                            style={styles.historyName}
+                          >
+                            {item.name}
+                          </Text>
 
-                        <Text style={styles.historyCardNumber}>
-                          {item.card}
-                        </Text>
+                          <Text
+                            style={styles.historyDate}
+                          >
+                            {item.date}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.historyCardNumber
+                            }
+                          >
+                            {item.card}
+                          </Text>
+
+                          <Text
+                            style={{
+                              color: "#2563eb",
+                              fontWeight: "600",
+                            }}
+                          >
+                            {item.brand}
+                          </Text>
+                        </View>
 
                         <Text
-                          style={{
-                            color: "#2563eb",
-                            fontWeight: "600",
-                          }}
+                          style={styles.historyPrice}
                         >
-                          {item.brand}
+                          {item.price}
                         </Text>
-                      </View>
-
-                      <Text style={styles.historyPrice}>
-                        {item.price}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-              </View>
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              )}
             </View>
           </ViewShot>
         </ScrollView>
 
-        <Modal visible={modalVisible} transparent animationType="fade">
+        <Modal
+          visible={modalVisible}
+          transparent
+          animationType="fade"
+        >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <Text style={styles.modalTitle}>
@@ -264,35 +315,50 @@ export default function PaymentScreen() {
               </Text>
 
               <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>Bandeira</Text>
+                <Text style={styles.modalLabel}>
+                  Bandeira
+                </Text>
+
                 <Text style={styles.modalValue}>
                   {selectedPayment?.brand}
                 </Text>
               </View>
 
               <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>Cartão</Text>
+                <Text style={styles.modalLabel}>
+                  Cartão
+                </Text>
+
                 <Text style={styles.modalValue}>
                   {selectedPayment?.card}
                 </Text>
               </View>
 
               <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>Nome</Text>
+                <Text style={styles.modalLabel}>
+                  Nome
+                </Text>
+
                 <Text style={styles.modalValue}>
                   {selectedPayment?.holder}
                 </Text>
               </View>
 
               <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>Validade</Text>
+                <Text style={styles.modalLabel}>
+                  Validade
+                </Text>
+
                 <Text style={styles.modalValue}>
                   {selectedPayment?.expiry}
                 </Text>
               </View>
 
               <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>CVV</Text>
+                <Text style={styles.modalLabel}>
+                  CVV
+                </Text>
+
                 <Text style={styles.modalValue}>
                   {selectedPayment?.cvv}
                 </Text>
@@ -300,9 +366,13 @@ export default function PaymentScreen() {
 
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => setModalVisible(false)}
+                onPress={() =>
+                  setModalVisible(false)
+                }
               >
-                <Text style={styles.closeButtonText}>Fechar</Text>
+                <Text style={styles.closeButtonText}>
+                  Fechar
+                </Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -320,14 +390,18 @@ export default function PaymentScreen() {
         <Text style={styles.loginText}>Login</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        onPress={() => setPaymentSuccess(true)}
-        style={styles.historyButtonTop}
-      >
-        <Text style={styles.historyButtonTopText}>
-          Ver histórico
-        </Text>
-      </TouchableOpacity>
+      {isAdmin && (
+        <TouchableOpacity
+          onPress={() => setPaymentSuccess(true)}
+          style={styles.historyButtonTop}
+        >
+          <Text
+            style={styles.historyButtonTopText}
+          >
+            Ver histórico
+          </Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.card}>
         <Image
@@ -337,14 +411,23 @@ export default function PaymentScreen() {
           style={styles.logo}
         />
 
-        <Text style={styles.title}>Checkout Premium</Text>
-        <Text style={styles.subtitle}>Pagamento seguro</Text>
+        <Text style={styles.title}>
+          Checkout Premium
+        </Text>
+
+        <Text style={styles.subtitle}>
+          Pagamento seguro
+        </Text>
 
         <View style={styles.priceBox}>
-          <Text style={styles.price}>R$ 4,00</Text>
+          <Text style={styles.price}>
+            R$ 4,00
+          </Text>
         </View>
 
-        <Text style={styles.label}>Número do cartão</Text>
+        <Text style={styles.label}>
+          Número do cartão
+        </Text>
 
         <TextInput
           placeholder="0000 0000 0000 0000"
@@ -367,7 +450,9 @@ export default function PaymentScreen() {
 
         <View style={styles.row}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>Validade</Text>
+            <Text style={styles.label}>
+              Validade
+            </Text>
 
             <TextInput
               placeholder="MM / AA"
@@ -393,7 +478,9 @@ export default function PaymentScreen() {
           <View style={{ width: 10 }} />
 
           <View style={{ flex: 1 }}>
-            <Text style={styles.label}>CVV</Text>
+            <Text style={styles.label}>
+              CVV
+            </Text>
 
             <TextInput
               placeholder="CVV"
@@ -401,7 +488,11 @@ export default function PaymentScreen() {
               keyboardType="numeric"
               value={cvv}
               onChangeText={(text) => {
-                const cleaned = text.replace(/\D/g, "");
+                const cleaned = text.replace(
+                  /\D/g,
+                  ""
+                );
+
                 setCvv(cleaned.slice(0, 4));
               }}
               maxLength={4}
@@ -414,7 +505,9 @@ export default function PaymentScreen() {
           </View>
         </View>
 
-        <Text style={styles.label}>Nome no cartão</Text>
+        <Text style={styles.label}>
+          Nome no cartão
+        </Text>
 
         <TextInput
           placeholder="Seu nome"
@@ -429,7 +522,10 @@ export default function PaymentScreen() {
         />
 
         <TouchableOpacity
-          style={[styles.button, isLoading && { opacity: 0.7 }]}
+          style={[
+            styles.button,
+            isLoading && { opacity: 0.7 },
+          ]}
           onPress={handlePayment}
           disabled={isLoading}
           onPressIn={handlePressIn}

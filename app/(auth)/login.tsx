@@ -9,7 +9,7 @@ import {
   Dimensions,
   SafeAreaView,
 } from "react-native";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
 
 const API_URL = "https://backend-social-app-1.onrender.com";
@@ -18,6 +18,7 @@ export default function Index() {
   const { handleSocialAuth, isLoading: isSocialLoading } = useSocialAuth();
   const { user } = useUser();
   const router = useRouter();
+  const params = useLocalSearchParams();
 
   const { width } = Dimensions.get("window");
   const isDesktop = width > 768;
@@ -51,7 +52,13 @@ export default function Index() {
 
     if (success) {
       await syncUserWithMongo();
-      router.replace("/(tabs)");
+
+      // 🔥 VOLTA PARA A TELA CORRETA
+      if (params.from === "payment") {
+        router.replace("/payment");
+      } else {
+        router.replace("/(tabs)");
+      }
     }
   }
 
