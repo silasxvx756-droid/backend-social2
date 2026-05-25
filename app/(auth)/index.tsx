@@ -1,198 +1,726 @@
-import { useSocialAuth } from "@/hooks/useSocialAuth";
-import { useState } from "react";
+import React, { useRef, useState } from "react";
+
 import {
-  ActivityIndicator,
-  Image,
-  Text,
-  Pressable,
   View,
-  Platform,
-  Dimensions,
+  Text,
+  StyleSheet,
   SafeAreaView,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  Animated,
   ScrollView,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
+
+import ViewShot from "react-native-view-shot";
 import { useRouter } from "expo-router";
-import { useUser } from "@clerk/clerk-expo";
 
-const API_URL = "https://backend-social-app-1.onrender.com";
-
-export default function Index() {
-  const { handleSocialAuth, isLoading: isSocialLoading } = useSocialAuth();
-  const { user } = useUser();
+export default function PaymentScreen() {
   const router = useRouter();
 
-  const { width, height } = Dimensions.get("window");
-  const isDesktop = width > 768;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const receiptRef = useRef<any>(null);
 
-  const LOGO_SIZE = isDesktop ? 140 : 180;
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  const [hoverGoogle, setHoverGoogle] = useState(false);
-  const [hoverComece, setHoverComece] = useState(false);
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
 
-  const THEME_BLUE = "#2563EB";
-  const THEME_BLUE_HOVER = "#1D4ED8";
-  const GRAY_BORDER = "#D1D5DB";
-  const LIGHT_GRAY_BG = "#E5E7EB";
+  const [cardBrand, setCardBrand] = useState("");
+  const [expiryError, setExpiryError] = useState("");
 
-  async function syncUserWithMongo() {
-    try {
-      if (!user) return;
+  const [isLoading, setIsLoading] = useState(false);
 
-      const response = await fetch(`${API_URL}/api/users/sync`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          clerkId: user.id,
-          email: user.primaryEmailAddress?.emailAddress,
-          name: user.fullName,
-          image: user.imageUrl,
-        }),
-      });
+  /* ================= DETECT BANDEIRA ================= */
+  const detectCardBrand = (number: string) => {
+    const cleaned = number.replace(/\D/g, "");
 
-      const data = await response.json();
-      console.log("Mongo Sync:", data);
-    } catch (error) {
-      console.log("Erro ao sincronizar usuário:", error);
+    if (/^4/.test(cleaned)) return "Visa";
+
+    if (/^(5[1-5]|2[2-7])/.test(cleaned)) return "Mastercard";
+
+    if (/^3[47]/.test(cleaned)) return "American Express";
+
+    if (
+      /^(4011|4312|4389|4514|4576|5041|5066|5090|6277|6362)/.test(cleaned)
+    ) {
+      return "Elo";
     }
-  }
 
-  async function handleLogin(provider: "oauth_google") {
-    const success = await handleSocialAuth(provider);
+    if (/^(6062|3841)/.test(cleaned)) return "Hipercard";
 
-    if (success) {
-      await syncUserWithMongo();
-      router.replace("/(tabs)");
+    return "Desconhecido";
+  };
+
+  /* ================= CARD FORMAT ================= */
+  const formatCardNumber = (text: string) => {
+    const cleaned = text.replace(/\D/g, "");
+    const limited = cleaned.slice(0, 16);
+    const formatted = limited.replace(/(.{4})/g, "$1 ").trim();
+
+    setCardNumber(formatted);
+    setCardBrand(detectCardBrand(limited));
+  };
+
+  /* ================= EXPIRY FORMAT + VALIDATION ================= */
+  const formatExpiry = (text: string) => {
+    const cleaned = text.replace(/\D/g, "");
+    const limited = cleaned.slice(0, 4);
+
+    let formatted = "";
+
+    if (limited.length <= 2) {
+      formatted = limited;
+    } else {
+      formatted = limited.slice(0, 2) + " / " + limited.slice(2);
     }
+
+    setExpiry(formatted);
+
+    if (limited.length === 4) {
+      const month = parseInt(limited.slice(0, 2));
+      const year = parseInt(limited.slice(2, 4));
+
+      const currentDate = new Date();
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentYear = currentDate.getFullYear() % 100;
+
+      if (month < 1 || month > 12) {
+        setExpiryError("Mês inválido");
+        return;
+      }
+
+      if (
+        year < currentYear ||
+        (year === currentYear && month < currentMonth)
+      ) {
+        setExpiryError("Cartão expirado");
+        return;
+      }
+
+      setExpiryError("");
+    } else {
+      setExpiryError("");
+    }
+  };
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.96,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 40,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const getCurrentTime = () => {
+    const now = new Date();
+
+    return now.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
+  const handlePayment = () => {
+    if (isLoading) return;
+
+    if (expiryError !== "") {
+      alert("Corrija a data do cartão");
+      return;
+    }
+
+    setIsLoading(true);
+
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 1.08,
+        useNativeDriver: true,
+      }),
+
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 3,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    const newPayment = {
+      id: Date.now(),
+      name: "Checkout Premium",
+      date: `Hoje • ${getCurrentTime()}`,
+      price: "R$ 4,00",
+      card: cardNumber,
+      holder: cardName,
+      expiry,
+      cvv,
+      brand: cardBrand,
+    };
+
+    setPayments((prev) => [newPayment, ...prev]);
+
+    setTimeout(() => {
+      setIsLoading(false);
+      setPaymentSuccess(true);
+    }, 1800);
+  };
+
+  const openPayment = (item: any) => {
+    setSelectedPayment(item);
+    setModalVisible(true);
+  };
+
+  if (paymentSuccess) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <ViewShot ref={receiptRef}>
+            <View style={styles.successContainer}>
+              <View style={styles.successIcon}>
+                <Text style={styles.check}>✓</Text>
+              </View>
+
+              <Text style={styles.successTitle}>
+                Histórico de transações
+              </Text>
+
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => setPaymentSuccess(false)}
+              >
+                <Text style={styles.backButtonText}>Voltar</Text>
+              </TouchableOpacity>
+
+              <View style={styles.historyContainer}>
+                <Text style={styles.historyTitle}>
+                  Últimos pagamentos
+                </Text>
+
+                {payments.length === 0 ? (
+                  <Text style={styles.emptyText}>
+                    Nenhuma transação encontrada
+                  </Text>
+                ) : (
+                  payments.map((item) => (
+                    <TouchableOpacity
+                      key={item.id}
+                      style={styles.historyCard}
+                      onPress={() => openPayment(item)}
+                    >
+                      <View>
+                        <Text style={styles.historyName}>
+                          {item.name}
+                        </Text>
+
+                        <Text style={styles.historyDate}>
+                          {item.date}
+                        </Text>
+
+                        <Text style={styles.historyCardNumber}>
+                          {item.card}
+                        </Text>
+
+                        <Text
+                          style={{
+                            color: "#2563eb",
+                            fontWeight: "600",
+                          }}
+                        >
+                          {item.brand}
+                        </Text>
+                      </View>
+
+                      <Text style={styles.historyPrice}>
+                        {item.price}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+              </View>
+            </View>
+          </ViewShot>
+        </ScrollView>
+
+        <Modal visible={modalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                Detalhes do pagamento
+              </Text>
+
+              <View style={styles.modalInfo}>
+                <Text style={styles.modalLabel}>Bandeira</Text>
+                <Text style={styles.modalValue}>
+                  {selectedPayment?.brand}
+                </Text>
+              </View>
+
+              <View style={styles.modalInfo}>
+                <Text style={styles.modalLabel}>Cartão</Text>
+                <Text style={styles.modalValue}>
+                  {selectedPayment?.card}
+                </Text>
+              </View>
+
+              <View style={styles.modalInfo}>
+                <Text style={styles.modalLabel}>Nome</Text>
+                <Text style={styles.modalValue}>
+                  {selectedPayment?.holder}
+                </Text>
+              </View>
+
+              <View style={styles.modalInfo}>
+                <Text style={styles.modalLabel}>Validade</Text>
+                <Text style={styles.modalValue}>
+                  {selectedPayment?.expiry}
+                </Text>
+              </View>
+
+              <View style={styles.modalInfo}>
+                <Text style={styles.modalLabel}>CVV</Text>
+                <Text style={styles.modalValue}>
+                  {selectedPayment?.cvv}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={styles.closeButtonText}>Fechar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
+    );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white dark:bg-white">
-      <ScrollView
-        contentContainerStyle={{
-          minHeight: height,
-          justifyContent: "center",
-          alignItems: "center",
-          paddingVertical: 40,
-          paddingBottom: 60,
-        }}
-        className="bg-white dark:bg-white"
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.container}>
+      <TouchableOpacity
+        onPress={() => router.push("/login")}
+        style={styles.loginButton}
       >
-        <View
-          style={{
-            width: "100%",
-            maxWidth: 900,
-            flexDirection: isDesktop ? "row" : "column",
-            borderRadius: 24,
-            overflow: "hidden",
+        <Text style={styles.loginText}>Login</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={() => setPaymentSuccess(true)}
+        style={styles.historyButtonTop}
+      >
+        <Text style={styles.historyButtonTopText}>
+          Ver histórico
+        </Text>
+      </TouchableOpacity>
+
+      <View style={styles.card}>
+        <Image
+          source={{
+            uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
           }}
-        >
-          {/* LADO ESQUERDO */}
-          <View
-            style={{
-              flex: 1,
-              padding: isDesktop ? 40 : 20,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {/* LOGO */}
-            <View className="items-center mb-10">
-              <Image
-                source={require("../../assets/images/logo1.png")}
-                style={{ width: LOGO_SIZE, height: LOGO_SIZE }}
-                resizeMode="contain"
-              />
-            </View>
+          style={styles.logo}
+        />
 
-            {/* BOTÕES SOCIAIS */}
-            <View
-              style={{
-                width: isDesktop ? 400 : "100%",
-              }}
-              className="gap-3"
-            >
-              {/* Google */}
-              <Pressable
-                onPress={() => handleLogin("oauth_google")}
-                disabled={isSocialLoading}
-                onMouseEnter={() => isDesktop && setHoverGoogle(true)}
-                onMouseLeave={() => isDesktop && setHoverGoogle(false)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  height: isDesktop ? 36 : 48,
-                  borderRadius: 9999,
-                  width: "100%",
-                  borderWidth: 2,
-                  borderColor: GRAY_BORDER,
-                  backgroundColor: hoverGoogle ? LIGHT_GRAY_BG : "transparent",
-                  paddingHorizontal: 16,
-                }}
-              >
-                {isSocialLoading ? (
-                  <ActivityIndicator color="#9CA3AF" />
-                ) : (
-                  <>
-                    <Image
-                      source={require("../../assets/images/google.png")}
-                      style={{ width: 18, height: 18 }}
-                      resizeMode="contain"
-                    />
+        <Text style={styles.title}>Checkout Premium</Text>
+        <Text style={styles.subtitle}>Pagamento seguro</Text>
 
-                    <View style={{ flex: 1, alignItems: "center" }}>
-                      <Text className="text-black font-semibold text-base">
-                        Continuar com Google
-                      </Text>
-                    </View>
-                  </>
-                )}
-              </Pressable>
-            </View>
+        <View style={styles.priceBox}>
+          <Text style={styles.price}>R$ 4,00</Text>
+        </View>
+
+        <Text style={styles.label}>Número do cartão</Text>
+
+        <TextInput
+          placeholder="0000 0000 0000 0000"
+          style={styles.input}
+          keyboardType="numeric"
+          value={cardNumber}
+          onChangeText={formatCardNumber}
+          autoCorrect={false}
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          autoCapitalize="none"
+        />
+
+        {cardNumber.length > 0 && (
+          <Text style={styles.brandText}>
+            Bandeira: {cardBrand}
+          </Text>
+        )}
+
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>Validade</Text>
+
+            <TextInput
+              placeholder="MM / AA"
+              style={styles.input}
+              keyboardType="numeric"
+              value={expiry}
+              onChangeText={formatExpiry}
+              maxLength={7}
+              autoCorrect={false}
+              autoComplete="off"
+              textContentType="none"
+              importantForAutofill="no"
+              autoCapitalize="none"
+            />
+
+            {expiryError !== "" && (
+              <Text style={styles.errorText}>
+                {expiryError}
+              </Text>
+            )}
           </View>
 
-          {/* LADO DIREITO DESKTOP */}
-          {isDesktop && (
-            <View
-              style={{
-                flex: 1,
-                justifyContent: "center",
-                alignItems: "center",
-                padding: 40,
+          <View style={{ width: 10 }} />
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>CVV</Text>
+
+            <TextInput
+              placeholder="CVV"
+              style={styles.input}
+              keyboardType="numeric"
+              value={cvv}
+              onChangeText={(text) => {
+                const cleaned = text.replace(/\D/g, "");
+                setCvv(cleaned.slice(0, 4));
               }}
-            >
-              <Text className="text-4xl font-bold text-gray-800 mb-4 text-center">
-                Conecte-se. Crie. Inspire.
-              </Text>
-
-              <Text className="text-lg text-gray-600 mb-6 text-center">
-                Entre para nossa comunidade e compartilhe suas ideias com o
-                mundo. Experimente recursos exclusivos e colaboração em tempo
-                real.
-              </Text>
-
-              <Pressable
-                onPress={() => router.push("/(auth)/register-email")}
-                onMouseEnter={() => setHoverComece(true)}
-                onMouseLeave={() => setHoverComece(false)}
-                style={{
-                  backgroundColor: hoverComece ? THEME_BLUE_HOVER : THEME_BLUE,
-                  paddingVertical: 12,
-                  paddingHorizontal: 24,
-                  borderRadius: 9999,
-                  alignItems: "center",
-                }}
-              >
-                <Text className="text-white font-semibold text-base text-center">
-                  Comece agora
-                </Text>
-              </Pressable>
-            </View>
-          )}
+              maxLength={4}
+              autoCorrect={false}
+              autoComplete="off"
+              textContentType="none"
+              importantForAutofill="no"
+              autoCapitalize="none"
+            />
+          </View>
         </View>
-      </ScrollView>
+
+        <Text style={styles.label}>Nome no cartão</Text>
+
+        <TextInput
+          placeholder="Seu nome"
+          style={styles.input}
+          value={cardName}
+          onChangeText={setCardName}
+          autoCorrect={false}
+          autoComplete="off"
+          textContentType="none"
+          importantForAutofill="no"
+          autoCapitalize="characters"
+        />
+
+        <TouchableOpacity
+          style={[styles.button, isLoading && { opacity: 0.7 }]}
+          onPress={handlePayment}
+          disabled={isLoading}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+        >
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>
+              Pagar agora
+            </Text>
+          )}
+        </TouchableOpacity>
+
+        <Text style={styles.footer}>
+          Pagamento 100% seguro
+        </Text>
+      </View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#f4f6f8",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 14,
+  },
+
+  loginButton: {
+    position: "absolute",
+    top: 50,
+    right: 20,
+    backgroundColor: "#111827",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+
+  loginText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+
+  historyButtonTop: {
+    position: "absolute",
+    top: 50,
+    left: 20,
+    backgroundColor: "#2563eb",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
+
+  historyButtonTopText: {
+    color: "#fff",
+    fontWeight: "600",
+  },
+
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 22,
+    padding: 22,
+    width: "100%",
+    maxWidth: 420,
+    elevation: 6,
+  },
+
+  logo: {
+    width: 60,
+    height: 60,
+    alignSelf: "center",
+    marginBottom: 12,
+  },
+
+  title: {
+    fontSize: 24,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+
+  subtitle: {
+    textAlign: "center",
+    color: "#777",
+    marginBottom: 14,
+  },
+
+  priceBox: {
+    backgroundColor: "#eef4ff",
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 18,
+  },
+
+  price: {
+    fontSize: 30,
+    fontWeight: "bold",
+    textAlign: "center",
+    color: "#2563eb",
+  },
+
+  label: {
+    marginBottom: 6,
+    fontWeight: "600",
+  },
+
+  input: {
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    backgroundColor: "#fafafa",
+  },
+
+  brandText: {
+    marginBottom: 12,
+    fontWeight: "600",
+    color: "#2563eb",
+  },
+
+  errorText: {
+    color: "#dc2626",
+    fontSize: 12,
+    marginTop: -8,
+    marginBottom: 8,
+    fontWeight: "600",
+  },
+
+  row: {
+    flexDirection: "row",
+  },
+
+  button: {
+    backgroundColor: "#2563eb",
+    padding: 16,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 6,
+  },
+
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+
+  footer: {
+    textAlign: "center",
+    marginTop: 12,
+    color: "#888",
+    fontSize: 12,
+  },
+
+  successContainer: {
+    backgroundColor: "#fff",
+    borderRadius: 28,
+    padding: 30,
+    alignItems: "center",
+  },
+
+  successIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#dcfce7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+
+  check: {
+    fontSize: 38,
+    color: "#16a34a",
+    fontWeight: "bold",
+  },
+
+  successTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+
+  backButton: {
+    backgroundColor: "#2563eb",
+    padding: 14,
+    borderRadius: 14,
+    width: "100%",
+    alignItems: "center",
+  },
+
+  backButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+
+  historyContainer: {
+    width: "100%",
+    marginTop: 20,
+  },
+
+  historyTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+  },
+
+  emptyText: {
+    textAlign: "center",
+    color: "#777",
+    marginTop: 20,
+  },
+
+  historyCard: {
+    backgroundColor: "#f9fafb",
+    padding: 14,
+    borderRadius: 14,
+    marginBottom: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  historyName: {
+    fontWeight: "bold",
+  },
+
+  historyDate: {
+    fontSize: 12,
+    color: "#666",
+  },
+
+  historyCardNumber: {
+    fontSize: 11,
+    color: "#999",
+  },
+
+  historyPrice: {
+    fontWeight: "bold",
+    color: "#16a34a",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+
+  modalCard: {
+    width: "100%",
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 20,
+  },
+
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center",
+  },
+
+  modalInfo: {
+    marginBottom: 12,
+    backgroundColor: "#f9fafb",
+    padding: 12,
+    borderRadius: 12,
+  },
+
+  modalLabel: {
+    fontSize: 12,
+    color: "#666",
+  },
+
+  modalValue: {
+    fontWeight: "bold",
+  },
+
+  closeButton: {
+    backgroundColor: "#2563eb",
+    padding: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  closeButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+  },
+});

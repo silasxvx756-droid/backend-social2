@@ -1,574 +1,339 @@
-import React, { useEffect, useState } from "react";
+import React, { useRef, useState } from "react";
+
 import {
   View,
   Text,
-  FlatList,
-  TouchableOpacity,
-  ActivityIndicator,
   StyleSheet,
   SafeAreaView,
-  Alert,
-  Image,
-  Linking,
-  Modal,
+  TouchableOpacity,
   TextInput,
-  TouchableWithoutFeedback,
-  KeyboardAvoidingView,
-  Platform,
+  Image,
+  Animated,
   ScrollView,
+  Modal,
 } from "react-native";
 
-import { Picker } from "@react-native-picker/picker";
-import { MaterialIcons } from "@expo/vector-icons";
+import ViewShot from "react-native-view-shot";
 
-type Job = {
-  _id: string;
-  title: string;
-  company: string;
-  description: string;
-  whatsapp: string;
+export default function PaymentScreen() {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const receiptRef = useRef<any>(null);
 
-  actor?: {
-    id: string;
-    username: string;
-    displayName: string;
-    avatar: string;
-  };
-};
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
-type Ad = {
-  _id: string;
-  typeItem: "ad";
-  image: string;
-};
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
 
-type ListItem = Job | Ad;
-
-export default function JobsScreen() {
-  const [data, setData] = useState<ListItem[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [appliedJobs, setAppliedJobs] = useState<
-    string[]
-  >([]);
-
-  const [modalVisible, setModalVisible] =
-    useState(false);
-
-  const [category, setCategory] =
-    useState("");
-
-  const [company, setCompany] =
-    useState("");
-
-  const [description, setDescription] =
-    useState("");
-
-  const [whatsapp, setWhatsapp] =
-    useState("");
-
-  useEffect(() => {
-    fetchJobs();
-  }, []);
-
-  const fetchJobs = async () => {
-    try {
-      setLoading(true);
-
-      const response = await fetch(
-        "https://SEU-RENDER.onrender.com/jobs"
-      );
-
-      const jobs = await response.json();
-
-      const mixed: ListItem[] = [];
-
-      jobs.forEach(
-        (job: Job, index: number) => {
-          mixed.push(job);
-
-          if ((index + 1) % 5 === 0) {
-            mixed.push({
-              _id:
-                "ad-" + index + Date.now(),
-
-              typeItem: "ad",
-
-              image:
-                "https://via.placeholder.com/400x200.png?text=Anuncio",
-            });
-          }
-        }
-      );
-
-      setData(mixed);
-    } catch (error) {
-      console.log(error);
-
-      Alert.alert(
-        "Erro",
-        "Não foi possível carregar os trabalhos"
-      );
-    } finally {
-      setLoading(false);
-    }
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.96,
+      useNativeDriver: true,
+    }).start();
   };
 
-  const handleApply = (
-    jobId: string
-  ) => {
-    if (appliedJobs.includes(jobId))
-      return;
-
-    setAppliedJobs((prev) => [
-      ...prev,
-      jobId,
-    ]);
-
-    Alert.alert(
-      "Sucesso",
-      "Você se candidatou!"
-    );
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 40,
+      useNativeDriver: true,
+    }).start();
   };
 
-  const handleMessage = (
-    phone: string
-  ) => {
-    const url = `https://wa.me/${phone.replace(
-      /\D/g,
-      ""
-    )}`;
+  const getCurrentTime = () => {
+    const now = new Date();
 
-    Linking.openURL(url);
+    return now.toLocaleTimeString("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   };
 
-  const handleDeletePost = async (
-    jobId: string
-  ) => {
-    Alert.alert(
-      "Apagar postagem",
-      "Deseja realmente apagar esta postagem?",
-      [
-        {
-          text: "Cancelar",
-          style: "cancel",
-        },
+  const handlePayment = () => {
+    Animated.sequence([
+      Animated.spring(scaleAnim, {
+        toValue: 1.08,
+        useNativeDriver: true,
+      }),
 
-        {
-          text: "Apagar",
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 3,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
-          style: "destructive",
-
-          onPress: async () => {
-            try {
-              await fetch(
-                `https://backend-social-app-1.onrender.com/jobs/${jobId}`,
-                {
-                  method: "DELETE",
-                }
-              );
-
-              fetchJobs();
-            } catch (error) {
-              Alert.alert(
-                "Erro",
-                "Não foi possível apagar"
-              );
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handlePublishJob =
-    async () => {
-      if (
-        !category ||
-        !company ||
-        !description ||
-        !whatsapp
-      ) {
-        Alert.alert(
-          "Erro",
-          "Preencha todos os campos obrigatórios"
-        );
-
-        return;
-      }
-
-      try {
-        const response = await fetch(
-          "https://SEU-RENDER.onrender.com/jobs",
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              title: category,
-              company,
-              description,
-              whatsapp,
-
-              actor: {
-                id: "123",
-                username: "usuario",
-                displayName: "Usuário",
-                avatar:
-                  "https://i.pravatar.cc/150?img=1",
-              },
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(
-            "Erro ao publicar"
-          );
-        }
-
-        setCategory("");
-        setCompany("");
-        setDescription("");
-        setWhatsapp("");
-
-        setModalVisible(false);
-
-        Alert.alert(
-          "Sucesso",
-          "Serviço publicado!"
-        );
-
-        fetchJobs();
-      } catch (error) {
-        console.log(error);
-
-        Alert.alert(
-          "Erro",
-          "Não foi possível publicar"
-        );
-      }
+    const newPayment = {
+      id: Date.now(),
+      name: "Checkout Premium",
+      date: `Hoje • ${getCurrentTime()}`,
+      price: "R$ 4,00",
+      card: cardNumber,
+      holder: cardName,
+      expiry,
+      cvv,
     };
 
-  const renderItem = ({
-    item,
-  }: {
-    item: ListItem;
-  }) => {
-    if ("typeItem" in item) {
-      return (
-        <View style={styles.adCard}>
-          <Image
-            source={{
-              uri: item.image,
-            }}
-            style={styles.adImage}
-          />
+    setPayments((prev) => [newPayment, ...prev]);
 
-          <TouchableOpacity
-            style={styles.adButton}
-            onPress={() =>
-              handleMessage(
-                "5599999999999"
-              )
-            }
-          >
-            <Text
-              style={styles.buttonText}
-            >
-              Enviar mensagem
-            </Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-
-    const applied =
-      appliedJobs.includes(item._id);
-
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.title}>
-            {item.title}
-          </Text>
-
-          <TouchableOpacity
-            onPress={() =>
-              handleDeletePost(
-                item._id
-              )
-            }
-          >
-            <MaterialIcons
-              name="more-vert"
-              size={24}
-              color="#555"
-            />
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.company}>
-          {item.company}
-        </Text>
-
-        <Text
-          style={styles.description}
-        >
-          {item.description}
-        </Text>
-
-        <TouchableOpacity
-          style={[
-            styles.adButton,
-            { marginTop: 10 },
-          ]}
-          onPress={() =>
-            handleMessage(
-              item.whatsapp
-            )
-          }
-        >
-          <Text
-            style={styles.buttonText}
-          >
-            WhatsApp
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.button,
-
-            applied && {
-              backgroundColor:
-                "#28a745",
-            },
-          ]}
-          onPress={() =>
-            handleApply(item._id)
-          }
-          disabled={applied}
-        >
-          <Text
-            style={styles.buttonText}
-          >
-            {applied
-              ? "Candidatado"
-              : "Candidatar"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-    );
+    setTimeout(() => {
+      setPaymentSuccess(true);
+    }, 500);
   };
 
-  if (loading) {
+  const openPayment = (item: any) => {
+    setSelectedPayment(item);
+  };
+
+  if (paymentSuccess) {
     return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <ViewShot
+            ref={receiptRef}
+            options={{
+              fileName: "comprovante",
+              format: "jpg",
+              quality: 1,
+              result: "data-uri",
+            }}
+          >
+            <View style={styles.successContainer}>
+              <View style={styles.successIcon}>
+                <Text style={styles.check}>✓</Text>
+              </View>
+
+              <Text style={styles.successTitle}>
+                Pagamento concluído
+              </Text>
+
+              <TouchableOpacity
+                style={styles.backButton}
+                onPress={() => setPaymentSuccess(false)}
+              >
+                <Text style={styles.backButtonText}>
+                  Voltar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.historyButton}
+                activeOpacity={0.9}
+                onPress={() => setModalVisible(true)}
+              >
+                <Text style={styles.historyButtonText}>
+                  Histórico
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ViewShot>
+        </ScrollView>
+
+        <Modal visible={modalVisible} transparent animationType="fade">
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <Text style={styles.modalTitle}>
+                Histórico de pagamentos
+              </Text>
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {payments.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.historyCard}
+                    activeOpacity={0.85}
+                    onPress={() => openPayment(item)}
+                  >
+                    <View>
+                      <Text style={styles.historyName}>
+                        {item.name}
+                      </Text>
+
+                      <Text style={styles.historyDate}>
+                        {item.date}
+                      </Text>
+
+                      <Text style={styles.historyCardNumber}>
+                        {item.card}
+                      </Text>
+                    </View>
+
+                    <Text style={styles.historyPrice}>
+                      {item.price}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+
+                {selectedPayment && (
+                  <>
+                    <View style={styles.modalInfo}>
+                      <Text style={styles.modalLabel}>
+                        Cartão
+                      </Text>
+
+                      <Text style={styles.modalValue}>
+                        {selectedPayment.card}
+                      </Text>
+                    </View>
+
+                    <View style={styles.modalInfo}>
+                      <Text style={styles.modalLabel}>
+                        Nome
+                      </Text>
+
+                      <Text style={styles.modalValue}>
+                        {selectedPayment.holder}
+                      </Text>
+                    </View>
+
+                    <View style={styles.modalInfo}>
+                      <Text style={styles.modalLabel}>
+                        Validade
+                      </Text>
+
+                      <Text style={styles.modalValue}>
+                        {selectedPayment.expiry}
+                      </Text>
+                    </View>
+
+                    <View style={styles.modalInfo}>
+                      <Text style={styles.modalLabel}>
+                        CVV
+                      </Text>
+
+                      <Text style={styles.modalValue}>
+                        {selectedPayment.cvv}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </ScrollView>
+
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  setModalVisible(false);
+                  setSelectedPayment(null);
+                }}
+              >
+                <Text style={styles.closeButtonText}>
+                  Fechar
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView
-      style={styles.container}
-    >
-      <View style={styles.topBar}>
-        <Text
-          style={styles.headerTitle}
-        >
-          Trabalhos
+    <SafeAreaView style={styles.container}>
+      <View style={styles.card}>
+        <Image
+          source={{
+            uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
+          }}
+          style={styles.logo}
+        />
+
+        <Text style={styles.title}>
+          Checkout Premium
         </Text>
 
-        <TouchableOpacity
-          style={styles.publishButton}
-          onPress={() =>
-            setModalVisible(true)
-          }
-        >
-          <Text
-            style={styles.publishText}
-          >
-            + Publicar
+        <Text style={styles.subtitle}>
+          Pagamento seguro
+        </Text>
+
+        <View style={styles.priceBox}>
+          <Text style={styles.price}>
+            R$ 4,00
           </Text>
-        </TouchableOpacity>
-      </View>
+        </View>
 
-      <FlatList
-        data={data}
-        keyExtractor={(item) =>
-          item._id
-        }
-        renderItem={renderItem}
-      />
+        <Text style={styles.label}>
+          Número do cartão
+        </Text>
 
-      <Modal
-        visible={modalVisible}
-        animationType="fade"
-        transparent
-      >
-        <TouchableWithoutFeedback
-          onPress={() =>
-            setModalVisible(false)
-          }
-        >
-          <View
-            style={styles.modalOverlay}
-          >
-            <TouchableWithoutFeedback>
-              <KeyboardAvoidingView
-                behavior={
-                  Platform.OS ===
-                  "ios"
-                    ? "padding"
-                    : undefined
-                }
-                style={styles.modalBox}
-              >
-                <ScrollView>
-                  <Text
-                    style={
-                      styles.modalTitle
-                    }
-                  >
-                    Publicar trabalho
-                  </Text>
+        <TextInput
+          placeholder="0000 0000 0000 0000"
+          style={styles.input}
+          keyboardType="numeric"
+          value={cardNumber}
+          onChangeText={setCardNumber}
+        />
 
-                  <View
-                    style={
-                      styles.pickerContainer
-                    }
-                  >
-                    <Picker
-                      selectedValue={
-                        category
-                      }
-                      onValueChange={(
-                        v
-                      ) =>
-                        setCategory(v)
-                      }
-                    >
-                      <Picker.Item
-                        label="Tipo de trabalho *"
-                        value=""
-                      />
+        <View style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>
+              Validade
+            </Text>
 
-                      <Picker.Item
-                        label="Logo"
-                        value="Logo"
-                      />
-
-                      <Picker.Item
-                        label="Design Gráfico"
-                        value="Design Gráfico"
-                      />
-
-                      <Picker.Item
-                        label="Social Media"
-                        value="Social Media"
-                      />
-
-                      <Picker.Item
-                        label="Thumbnail"
-                        value="Thumbnail"
-                      />
-
-                      <Picker.Item
-                        label="Edição de Vídeo"
-                        value="Edição de Vídeo"
-                      />
-                    </Picker>
-                  </View>
-
-                  <TextInput
-                    placeholder="Empresa *"
-                    style={
-                      styles.input
-                    }
-                    value={company}
-                    onChangeText={
-                      setCompany
-                    }
-                  />
-
-                  <TextInput
-                    placeholder="Descrição *"
-                    style={[
-                      styles.input,
-                      {
-                        height: 100,
-                      },
-                    ]}
-                    multiline
-                    value={description}
-                    onChangeText={
-                      setDescription
-                    }
-                  />
-
-                  <TextInput
-                    placeholder="WhatsApp com DDD *"
-                    style={
-                      styles.input
-                    }
-                    value={whatsapp}
-                    onChangeText={
-                      setWhatsapp
-                    }
-                    keyboardType="phone-pad"
-                  />
-
-                  <TouchableOpacity
-                    style={
-                      styles.publishButton
-                    }
-                    onPress={
-                      handlePublishJob
-                    }
-                  >
-                    <Text
-                      style={
-                        styles.publishText
-                      }
-                    >
-                      Publicar trabalho
-                    </Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.publishButton,
-                      {
-                        backgroundColor:
-                          "#ccc",
-                      },
-                    ]}
-                    onPress={() =>
-                      setModalVisible(
-                        false
-                      )
-                    }
-                  >
-                    <Text
-                      style={{
-                        color: "#000",
-                      }}
-                    >
-                      Cancelar
-                    </Text>
-                  </TouchableOpacity>
-                </ScrollView>
-              </KeyboardAvoidingView>
-            </TouchableWithoutFeedback>
+            <TextInput
+              placeholder="MM/AA"
+              style={styles.input}
+              value={expiry}
+              onChangeText={setExpiry}
+            />
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+
+          <View style={{ width: 12 }} />
+
+          <View style={{ flex: 1 }}>
+            <Text style={styles.label}>
+              CVV
+            </Text>
+
+            <TextInput
+              placeholder="123"
+              style={styles.input}
+              secureTextEntry
+              keyboardType="numeric"
+              value={cvv}
+              onChangeText={setCvv}
+            />
+          </View>
+        </View>
+
+        <Text style={styles.label}>
+          Nome no cartão
+        </Text>
+
+        <TextInput
+          placeholder="Seu nome"
+          style={styles.input}
+          value={cardName}
+          onChangeText={setCardName}
+        />
+
+        <Animated.View
+          style={{
+            transform: [{ scale: scaleAnim }],
+          }}
+        >
+          <TouchableOpacity
+            style={styles.button}
+            onPress={handlePayment}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            activeOpacity={0.9}
+          >
+            <Text style={styles.buttonText}>
+              Pagar agora
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+
+        <Text style={styles.footer}>
+          Pagamento 100% seguro
+        </Text>
+      </View>
     </SafeAreaView>
   );
 }
@@ -576,150 +341,248 @@ export default function JobsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: "#f5f5f5",
-  },
-
-  topBar: {
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-
-    marginBottom: 10,
-
-    alignItems: "center",
-  },
-
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-  },
-
-  publishButton: {
-    backgroundColor: "#28a745",
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 10,
-  },
-
-  publishText: {
-    color: "#fff",
-    fontWeight: "bold",
+    backgroundColor: "#f4f6f8",
+    justifyContent: "center",
+    padding: 20,
   },
 
   card: {
     backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 10,
+    borderRadius: 24,
+    padding: 22,
+    elevation: 5,
   },
 
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent:
-      "space-between",
-
-    alignItems: "center",
+  logo: {
+    width: 70,
+    height: 70,
+    alignSelf: "center",
+    marginBottom: 16,
   },
 
   title: {
+    fontSize: 26,
     fontWeight: "bold",
-    fontSize: 18,
-    flex: 1,
+    textAlign: "center",
+    color: "#111",
   },
 
-  company: {
-    color: "#666",
+  subtitle: {
+    textAlign: "center",
+    color: "#777",
     marginTop: 4,
+    marginBottom: 20,
   },
 
-  description: {
-    marginTop: 8,
-    color: "#444",
-  },
-
-  button: {
-    marginTop: 10,
-    backgroundColor: "#007bff",
-    padding: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-
-  buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  adCard: {
-    backgroundColor: "#fff",
-    padding: 10,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-
-  adImage: {
-    width: "100%",
-    height: 150,
-    borderRadius: 10,
-  },
-
-  adButton: {
-    marginTop: 10,
-    backgroundColor: "#25D366",
-    padding: 10,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-
-  modalOverlay: {
-    flex: 1,
-
-    backgroundColor:
-      "rgba(0,0,0,0.5)",
-
-    justifyContent: "center",
-
-    alignItems: "center",
-
+  priceBox: {
+    backgroundColor: "#eef4ff",
     padding: 16,
+    borderRadius: 16,
+    marginBottom: 20,
   },
 
-  modalBox: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    padding: 20,
-  },
-
-  modalTitle: {
-    fontSize: 20,
+  price: {
+    fontSize: 32,
     fontWeight: "bold",
-    marginBottom: 10,
+    textAlign: "center",
+    color: "#2563eb",
+  },
+
+  label: {
+    marginBottom: 6,
+    fontWeight: "600",
+    color: "#333",
   },
 
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 10,
-    backgroundColor: "#fff",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    backgroundColor: "#fafafa",
   },
 
-  pickerContainer: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    marginBottom: 10,
-    overflow: "hidden",
+  row: {
+    flexDirection: "row",
+  },
+
+  button: {
+    backgroundColor: "#2563eb",
+    padding: 18,
+    borderRadius: 16,
+    alignItems: "center",
+    marginTop: 8,
+    shadowColor: "#2563eb",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+
+  buttonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+
+  footer: {
+    textAlign: "center",
+    marginTop: 16,
+    color: "#888",
+    fontSize: 12,
+  },
+
+  successContainer: {
     backgroundColor: "#fff",
+    borderRadius: 28,
+    paddingVertical: 35,
+    paddingHorizontal: 24,
+    alignItems: "center",
+    elevation: 6,
+  },
+
+  successIcon: {
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#dcfce7",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+
+  check: {
+    fontSize: 42,
+    color: "#16a34a",
+    fontWeight: "bold",
+  },
+
+  successTitle: {
+    fontSize: 28,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 20,
+  },
+
+  backButton: {
+    backgroundColor: "#2563eb",
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 14,
+    width: "100%",
+    alignItems: "center",
+  },
+
+  backButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+
+  historyButton: {
+    backgroundColor: "#111827",
+    paddingVertical: 14,
+    paddingHorizontal: 40,
+    borderRadius: 14,
+    width: "100%",
+    alignItems: "center",
+    marginTop: 14,
+  },
+
+  historyButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 15,
+  },
+
+  historyCard: {
+    backgroundColor: "#f9fafb",
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
+  historyName: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+
+  historyDate: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginTop: 4,
+  },
+
+  historyCardNumber: {
+    fontSize: 12,
+    color: "#9ca3af",
+    marginTop: 4,
+  },
+
+  historyPrice: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#16a34a",
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+
+  modalCard: {
+    width: "100%",
+    maxHeight: "85%",
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 24,
+  },
+
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#111827",
+    marginBottom: 20,
+    textAlign: "center",
+  },
+
+  modalInfo: {
+    marginBottom: 18,
+    backgroundColor: "#f9fafb",
+    padding: 14,
+    borderRadius: 14,
+  },
+
+  modalLabel: {
+    fontSize: 13,
+    color: "#6b7280",
+    marginBottom: 6,
+  },
+
+  modalValue: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#111827",
+  },
+
+  closeButton: {
+    backgroundColor: "#2563eb",
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  closeButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 15,
   },
 });

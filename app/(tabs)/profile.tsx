@@ -7,28 +7,15 @@ import {
   ScrollView,
   Animated,
   StatusBar,
-  Modal,
-  FlatList,
-  Image,
-  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUser, useClerk } from "@clerk/clerk-expo";
-import { Feather } from "@expo/vector-icons";
-import { useFocusEffect } from "@react-navigation/native";
 import { useRouter } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
 
 import { useProfile } from "@/hooks/useProfile";
 
 const HEADER_OFFSET = 10;
-const API_URL = "https://backend-social-app-1.onrender.com";
-
-type FollowUser = {
-  id: string;
-  username: string;
-  displayName: string;
-  avatar: string;
-};
 
 export default function ProfileScreen() {
   const { user } = useUser();
@@ -37,69 +24,40 @@ export default function ProfileScreen() {
   const { formData, updateFormField } = useProfile();
   const insets = useSafeAreaInsets();
 
-  const [followers, setFollowers] = useState<FollowUser[]>([]);
-  const [following, setFollowing] = useState<FollowUser[]>([]);
-  const [loadingFollow, setLoadingFollow] = useState(false);
-  const [showFollowModal, setShowFollowModal] = useState(false);
-  const [followType, setFollowType] = useState<"followers" | "following">("followers");
   const imageOpacity = useRef(new Animated.Value(0)).current;
 
-  // ------------------- LOAD CLERK -------------------
-  const loadFromClerk = useCallback(() => {
+  // ------------------- LOAD USER -------------------
+  const loadUserData = useCallback(() => {
     if (!user) return;
+
     updateFormField("username", user.username || "");
     updateFormField("firstName", user.firstName || "");
     updateFormField("avatar", user.imageUrl || "");
+
+    // ✅ carregar metadata atualizada
+    updateFormField(
+      "bio",
+      (user.unsafeMetadata?.bio as string) || ""
+    );
+
+    updateFormField(
+      "whatsapp",
+      (user.unsafeMetadata?.whatsapp as string) || ""
+    );
   }, [user]);
 
   useEffect(() => {
-    loadFromClerk();
-  }, [loadFromClerk]);
+    loadUserData();
+  }, [loadUserData]);
 
-  // ------------------- FETCH FOLLOWERS -------------------
-  const fetchFollowers = useCallback(async () => {
-    if (!user) return;
-    setLoadingFollow(true);
-    try {
-      const res = await fetch(`${API_URL}/followers/${user.id}`);
-      const data: FollowUser[] = await res.json();
-      setFollowers(data);
-    } catch (err) {
-      console.log("Erro ao buscar seguidores:", err);
-    } finally {
-      setLoadingFollow(false);
-    }
-  }, [user]);
-
-  const fetchFollowing = useCallback(async () => {
-    if (!user) return;
-    setLoadingFollow(true);
-    try {
-      const res = await fetch(`${API_URL}/following/${user.id}`);
-      const data: FollowUser[] = await res.json();
-      setFollowing(data);
-    } catch (err) {
-      console.log("Erro ao buscar seguindo:", err);
-    } finally {
-      setLoadingFollow(false);
-    }
-  }, [user]);
-
+  // ✅ atualiza ao voltar da tela EditProfile
   useFocusEffect(
     useCallback(() => {
-      fetchFollowers();
-      fetchFollowing();
-    }, [fetchFollowers, fetchFollowing])
+      loadUserData();
+    }, [loadUserData])
   );
 
-  // ------------------- HANDLERS -------------------
-  const handleFollowClick = (type: "followers" | "following") => {
-    if (type === "followers") fetchFollowers();
-    else fetchFollowing();
-    setFollowType(type);
-    setShowFollowModal(true);
-  };
-
+  // ------------------- SIGN OUT -------------------
   const handleSignOut = async () => {
     try {
       await clerk.signOut();
@@ -125,6 +83,7 @@ export default function ProfileScreen() {
           }}
         >
           <Text />
+
           <TouchableOpacity
             onPress={handleSignOut}
             style={{
@@ -134,15 +93,33 @@ export default function ProfileScreen() {
               backgroundColor: "#eee",
             }}
           >
-            <Text style={{ color: "#000", fontWeight: "600" }}>Sair</Text>
+            <Text
+              style={{
+                color: "#000",
+                fontWeight: "600",
+              }}
+            >
+              Sair
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* PROFILE */}
-        <View style={{ paddingHorizontal: 16, marginTop: 16, alignItems: "center" }}>
+        <View
+          style={{
+            paddingHorizontal: 16,
+            marginTop: 16,
+            alignItems: "center",
+          }}
+        >
           <Animated.Image
             source={{ uri: formData.avatar }}
-            style={{ width: 96, height: 96, borderRadius: 48, opacity: imageOpacity }}
+            style={{
+              width: 96,
+              height: 96,
+              borderRadius: 48,
+              opacity: imageOpacity,
+            }}
             onLoad={() =>
               Animated.timing(imageOpacity, {
                 toValue: 1,
@@ -152,83 +129,61 @@ export default function ProfileScreen() {
             }
           />
 
-          <Text style={{ fontSize: 16, fontWeight: "600", color: "#000", marginTop: 12 }}>
+          <Text
+            style={{
+              fontSize: 16,
+              fontWeight: "600",
+              color: "#000",
+              marginTop: 12,
+            }}
+          >
             {formData.firstName || "Usuário"}
           </Text>
 
           {/* BIO */}
-          <Text style={{ marginTop: 8, color: "#555", textAlign: "center" }}>
+          <Text
+            style={{
+              marginTop: 8,
+              color: "#555",
+              textAlign: "center",
+            }}
+          >
             {formData.bio || "Sem biografia"}
           </Text>
 
-          {/* CIDADE */}
-          <Text style={{ marginTop: 4, color: "#777" }}>
-            📍 {formData.city || "Cidade não informada"}
-          </Text>
-
           {/* WHATSAPP */}
-          <Text style={{ marginTop: 4, color: "#25D366", fontWeight: "600" }}>
+          <Text
+            style={{
+              marginTop: 4,
+              color: "#25D366",
+              fontWeight: "600",
+            }}
+          >
             WhatsApp: {formData.whatsapp || "Não informado"}
           </Text>
 
+          {/* EDIT PROFILE */}
           <TouchableOpacity
             onPress={() => router.push("/EditProfile")}
             style={{
-              marginTop: 12,
+              marginTop: 16,
               paddingVertical: 6,
               paddingHorizontal: 16,
               borderRadius: 8,
               backgroundColor: "#eee",
             }}
           >
-            <Text style={{ color: "#000", fontWeight: "600" }}>Editar Perfil</Text>
+            <Text
+              style={{
+                color: "#000",
+                fontWeight: "600",
+              }}
+            >
+              Editar Perfil
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      {/* FOLLOW MODAL */}
-      <Modal visible={showFollowModal} animationType="slide">
-        <View style={{ flex: 1, backgroundColor: "#fff" }}>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: 16,
-            }}
-          >
-            <TouchableOpacity onPress={() => setShowFollowModal(false)}>
-              <Feather name="arrow-left" size={22} color="#000" />
-            </TouchableOpacity>
-
-            <Text style={{ fontSize: 16, fontWeight: "600", color: "#000" }}>
-              {followType === "followers" ? "Seguidores" : "Seguindo"}
-            </Text>
-
-            <View style={{ width: 22 }} />
-          </View>
-
-          {loadingFollow ? (
-            <ActivityIndicator size="large" color="#000" style={{ marginTop: 24 }} />
-          ) : (
-            <FlatList
-              data={followType === "followers" ? followers : following}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <View style={{ flexDirection: "row", alignItems: "center", padding: 12 }}>
-                  <Image
-                    source={{ uri: item.avatar || "https://via.placeholder.com/40" }}
-                    style={{ width: 40, height: 40, borderRadius: 20, marginRight: 12 }}
-                  />
-                  <Text style={{ color: "#000", fontWeight: "600" }}>
-                    {item.displayName}
-                  </Text>
-                </View>
-              )}
-            />
-          )}
-        </View>
-      </Modal>
     </View>
   );
 }

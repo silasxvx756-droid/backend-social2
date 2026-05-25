@@ -1,6 +1,7 @@
 // src/hooks/useSocialAuth.ts
-import { useSSO, useUser } from "@clerk/clerk-expo";
+import { useSSO, useUser, useClerk } from "@clerk/clerk-expo";
 import { useState } from "react";
+import { Platform } from "react-native";
 import { createUserOnBackend } from "./useCreateUser";
 
 const generateUsername = () => {
@@ -11,8 +12,10 @@ const generateUsername = () => {
 
 export const useSocialAuth = () => {
   const [isLoading, setIsLoading] = useState(false);
+
   const { startSSOFlow } = useSSO();
   const { user } = useUser();
+  const { signOut } = useClerk();
 
   const handleSocialAuth = async (
     strategy: "oauth_google" | "oauth_apple"
@@ -20,24 +23,36 @@ export const useSocialAuth = () => {
     setIsLoading(true);
 
     try {
-      const ssoResult = await startSSOFlow({ strategy });
+      // força limpar sessão atual no web
+      if (Platform.OS === "web") {
+        await signOut();
+      }
+
+      const ssoResult = await startSSOFlow({
+        strategy,
+
+        redirectUrl:
+          Platform.OS === "web"
+            ? window.location.origin
+            : undefined,
+
+        additionalParameters: {
+          prompt: "select_account",
+        },
+      });
 
       if (!ssoResult?.createdSessionId || !ssoResult?.setActive) {
-        // login cancelado pelo usuário — apenas retorna false sem alert
         return false;
       }
 
       const { createdSessionId, setActive } = ssoResult;
 
-      // ativa sessão
       await setActive({ session: createdSessionId });
 
       if (!user) {
-        // usuário ainda não carregou — retorna false sem alert
         return false;
       }
 
-      // cria username se não existir
       if (!user.username) {
         let attempts = 0;
         let success = false;
@@ -53,7 +68,6 @@ export const useSocialAuth = () => {
         }
       }
 
-      // cria usuário no backend
       if (user.username) {
         await createUserOnBackend({
           clerkId: user.id,
@@ -66,7 +80,6 @@ export const useSocialAuth = () => {
       return true;
     } catch (err) {
       console.log("Erro no social auth:", err);
-      // falha silenciosa — apenas loga e retorna false
       return false;
     } finally {
       setIsLoading(false);
