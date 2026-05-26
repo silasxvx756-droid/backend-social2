@@ -30,8 +30,7 @@
       "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon3.png"
+      "output": "static"
     },
     "plugins": [
       "expo-router",
