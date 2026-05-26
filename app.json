@@ -9,9 +9,11 @@
     "scheme": "mobile",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+
     "ios": {
       "supportsTablet": true
     },
+
     "android": {
       "package": "com.silasxvx.procurojob2",
       "versionCode": 17,
@@ -29,11 +31,15 @@
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize"
     },
+
     "web": {
-      "output": "static"
+      "output": "static",
+      "favicon": "./assets/images/newfavicon2026.png"
     },
+
     "plugins": [
       "expo-router",
+
       [
         "expo-splash-screen",
         {
@@ -43,7 +49,9 @@
           "backgroundColor": "#ffffff"
         }
       ],
+
       "expo-web-browser",
+
       [
         "expo-image-picker",
         {
@@ -51,12 +59,15 @@
           "cameraPermission": false
         }
       ],
+
       "expo-mail-composer"
     ],
+
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
+
     "extra": {
       "router": {},
       "eas": {
