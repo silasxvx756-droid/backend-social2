@@ -13,6 +13,17 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
+console.log("=================================");
+console.log(
+  "MP_ACCESS_TOKEN:",
+  process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO"
+);
+console.log(
+  "MONGO_URI:",
+  process.env.MONGO_URI ? "CARREGADO" : "NÃO CARREGADO"
+);
+console.log("=================================");
+
 /* ================= MERCADO PAGO ================= */
 
 const mpClient = new MercadoPagoConfig({
