@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 
 import {
   View,
@@ -8,467 +8,194 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
-  Animated,
   ScrollView,
-  Modal,
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
 
-import ViewShot from "react-native-view-shot";
-import { useRouter } from "expo-router";
 import { useUser } from "@clerk/clerk-expo";
+import io from "socket.io-client";
+
+const socket = io("https://backend-social-app-1.onrender.com");
 
 export default function PaymentScreen() {
-  const router = useRouter();
   const { user } = useUser();
 
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  const receiptRef = useRef<any>(null);
-
-  const [paymentSuccess, setPaymentSuccess] =
-    useState(false);
-
-  const [payments, setPayments] = useState<any[]>([]);
-
-  const [selectedPayment, setSelectedPayment] =
-    useState<any | null>(null);
-
-  const [modalVisible, setModalVisible] =
-    useState(false);
-
-  const [cardNumber, setCardNumber] = useState("");
-
-  const [cardName, setCardName] = useState("");
-
-  const [expiry, setExpiry] = useState("");
-
-  const [cvv, setCvv] = useState("");
-
-  const [cardBrand, setCardBrand] = useState("");
-
-  const [expiryError, setExpiryError] = useState("");
-
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  /* ================= ADMIN ================= */
+  const [status, setStatus] = useState("");
 
-  const ADMIN_EMAIL = "silasyyyxvx@gmail.com";
+  const [cardNumber, setCardNumber] = useState("");
+  const [cardName, setCardName] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+  const [cardBrand, setCardBrand] = useState("");
 
-  const loggedUserEmail =
-    user?.primaryEmailAddress?.emailAddress || "";
+  // 🔌 SOCKET
+  useEffect(() => {
+    if (!user?.id) return;
 
-  const isAdmin = loggedUserEmail === ADMIN_EMAIL;
+    socket.emit("join", user.id);
 
-  /* ================= CARD BRAND ================= */
+    socket.on("payment-status", (data) => {
+      console.log("📡 status recebido:", data);
+      setStatus(data.status);
 
-  const detectCardBrand = (number: string) => {
+      if (data.status === "approved") {
+        setPaymentSuccess(true);
+      }
+    });
+
+    return () => {
+      socket.off("payment-status");
+    };
+  }, [user]);
+
+  // 💳 detect card brand
+  const detectCardBrand = (number) => {
     const cleaned = number.replace(/\D/g, "");
 
-    if (/^4/.test(cleaned)) return "Visa";
+    if (/^4/.test(cleaned)) return "visa";
+    if (/^(5[1-5]|2[2-7])/.test(cleaned)) return "mastercard";
+    if (/^3[47]/.test(cleaned)) return "amex";
 
-    if (/^(5[1-5]|2[2-7])/.test(cleaned))
-      return "Mastercard";
-
-    if (/^3[47]/.test(cleaned))
-      return "American Express";
-
-    if (
-      /^(4011|4312|4389|4514|4576|5041|5066|5090|6277|6362)/.test(
-        cleaned
-      )
-    ) {
-      return "Elo";
-    }
-
-    if (/^(6062|3841)/.test(cleaned))
-      return "Hipercard";
-
-    return "Desconhecido";
+    return "unknown";
   };
 
-  /* ================= FORMAT CARD ================= */
-
-  const formatCardNumber = (text: string) => {
-    const cleaned = text.replace(/\D/g, "");
-
-    const limited = cleaned.slice(0, 16);
-
-    const formatted = limited
-      .replace(/(.{4})/g, "$1 ")
-      .trim();
+  // 📌 format card
+  const formatCardNumber = (text) => {
+    const cleaned = text.replace(/\D/g, "").slice(0, 16);
+    const formatted = cleaned.replace(/(.{4})/g, "$1 ").trim();
 
     setCardNumber(formatted);
-
-    setCardBrand(detectCardBrand(limited));
+    setCardBrand(detectCardBrand(cleaned));
   };
 
-  /* ================= FORMAT EXPIRY ================= */
+  // 📌 format expiry
+  const formatExpiry = (text) => {
+    const cleaned = text.replace(/\D/g, "").slice(0, 4);
 
-  const formatExpiry = (text: string) => {
-    const cleaned = text.replace(/\D/g, "");
+    let formatted = cleaned;
 
-    const limited = cleaned.slice(0, 4);
-
-    let formatted = "";
-
-    if (limited.length <= 2) {
-      formatted = limited;
-    } else {
-      formatted =
-        limited.slice(0, 2) +
-        " / " +
-        limited.slice(2);
+    if (cleaned.length > 2) {
+      formatted = cleaned.slice(0, 2) + "/" + cleaned.slice(2);
     }
 
     setExpiry(formatted);
-
-    if (limited.length === 4) {
-      const month = parseInt(limited.slice(0, 2));
-
-      const year = parseInt(limited.slice(2, 4));
-
-      const currentDate = new Date();
-
-      const currentMonth =
-        currentDate.getMonth() + 1;
-
-      const currentYear =
-        currentDate.getFullYear() % 100;
-
-      if (month < 1 || month > 12) {
-        setExpiryError("Mês inválido");
-        return;
-      }
-
-      if (
-        year < currentYear ||
-        (year === currentYear &&
-          month < currentMonth)
-      ) {
-        setExpiryError("Cartão expirado");
-        return;
-      }
-
-      setExpiryError("");
-    } else {
-      setExpiryError("");
-    }
   };
 
-  /* ================= ANIMATION ================= */
-
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.96,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 3,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  /* ================= TIME ================= */
-
-  const getCurrentTime = () => {
-    const now = new Date();
-
-    return now.toLocaleTimeString("pt-BR", {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  /* ================= PAYMENT ================= */
-
+  // 💳 PAYMENT
   const handlePayment = async () => {
     try {
       if (isLoading) return;
 
-      if (
-        !cardNumber ||
-        !cardName ||
-        !expiry ||
-        !cvv
-      ) {
-        Alert.alert(
-          "Erro",
-          "Preencha todos os campos"
-        );
-        return;
-      }
-
-      if (cardBrand === "Desconhecido") {
-        Alert.alert(
-          "Erro",
-          "Bandeira do cartão inválida"
-        );
-        return;
-      }
-
-      if (expiryError !== "") {
-        Alert.alert(
-          "Erro",
-          "Data do cartão inválida"
-        );
-        return;
-      }
-
-      const cleanedCard =
-        cardNumber.replace(/\D/g, "");
-
-      if (cleanedCard.length < 16) {
-        Alert.alert(
-          "Erro",
-          "Número do cartão inválido"
-        );
-        return;
-      }
-
-      if (expiry.length < 7) {
-        Alert.alert(
-          "Erro",
-          "Validade incompleta"
-        );
-        return;
-      }
-
-      if (cvv.length < 3) {
-        Alert.alert("Erro", "CVV inválido");
+      if (!cardNumber || !cardName || !expiry || !cvv) {
+        Alert.alert("Erro", "Preencha todos os campos");
         return;
       }
 
       setIsLoading(true);
 
-      Animated.sequence([
-        Animated.spring(scaleAnim, {
-          toValue: 1.08,
-          useNativeDriver: true,
-        }),
+      console.log("🔄 gerando token...");
 
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          friction: 3,
-          tension: 40,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      const newPayment = {
-        id: Date.now(),
-        name: "Checkout Premium",
-        date: `Hoje • ${getCurrentTime()}`,
-        price: "R$ 4,00",
-        card: cardNumber,
-        holder: cardName,
-        expiry,
-        cvv,
-        brand: cardBrand,
-      };
-
-      const response = await fetch(
-        "https://backend-social-app-1.onrender.com/payment",
+      // 1. TOKEN MERCADO PAGO
+      const tokenRes = await fetch(
+        "https://api.mercadopago.com/v1/card_tokens",
         {
           method: "POST",
           headers: {
-            "Content-Type":
-              "application/json",
+            Authorization: `Bearer APP_USR-5486663540607434-060814-99261513fe2a3de65d5acdcfe51d9864-3459883644`,
+            "Content-Type": "application/json",
           },
-          body: JSON.stringify(newPayment),
+          body: JSON.stringify({
+            card_number: cardNumber.replace(/\s/g, ""),
+            security_code: cvv,
+            expiration_month: expiry.split("/")[0],
+            expiration_year: "20" + expiry.split("/")[1],
+            cardholder: {
+              name: cardName,
+            },
+          }),
+        }
+      );
+
+      const tokenData = await tokenRes.json();
+
+      console.log("📦 token:", tokenData);
+
+      if (!tokenData.id) {
+        throw new Error("Erro ao gerar token do cartão");
+      }
+
+      // 2. BACKEND PAYMENT
+      const response = await fetch(
+        "https://backend-social-app-1.onrender.com/card-payment",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            token: tokenData.id,
+            installments: 1,
+            paymentMethodId: cardBrand,
+            issuerId: "1",
+            email: user?.primaryEmailAddress?.emailAddress,
+            userId: user?.id,
+            name: cardName,
+          }),
         }
       );
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(
-          data.error || "Erro no pagamento"
-        );
-      }
-
-      setPayments((prev) => [
-        newPayment,
-        ...prev,
-      ]);
-
-      setTimeout(() => {
-        setIsLoading(false);
-        setPaymentSuccess(true);
-      }, 1800);
-    } catch (err) {
-      console.log("❌ ERRO PAGAMENTO:", err);
-
-      Alert.alert("Erro", String(err));
+      console.log("📦 backend response:", data);
 
       setIsLoading(false);
+
+      // 3. STATUS CHECK
+      if (data.status === "approved") {
+        setPaymentSuccess(true);
+      } else if (data.status === "pending") {
+        Alert.alert("Pagamento em análise ⏳");
+      } else {
+        Alert.alert("Pagamento recusado ❌", data.status || "Erro");
+      }
+    } catch (err) {
+      setIsLoading(false);
+      Alert.alert("Erro", err.message || "Falha no pagamento");
     }
   };
 
-  /* ================= MODAL ================= */
-
-  const openPayment = (item: any) => {
-    setSelectedPayment(item);
-
-    setModalVisible(true);
-  };
-
-  /* ================= SUCCESS ================= */
-
+  // ✅ SUCCESS SCREEN
   if (paymentSuccess) {
     return (
       <SafeAreaView style={styles.container}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{
-            paddingBottom: 120,
-          }}
-        >
-          <ViewShot ref={receiptRef}>
-            <View style={styles.successContainer}>
-              <View style={styles.successIcon}>
-                <Text style={styles.check}>✓</Text>
-              </View>
+        <View style={styles.successBox}>
+          <Text style={styles.successText}>✔ Pagamento aprovado</Text>
 
-              <Text style={styles.successTitle}>
-                Pagamento aprovado
-              </Text>
-
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() =>
-                  setPaymentSuccess(false)
-                }
-              >
-                <Text style={styles.backButtonText}>
-                  Voltar
-                </Text>
-              </TouchableOpacity>
-
-              {isAdmin && (
-                <View
-                  style={styles.historyContainer}
-                >
-                  <Text style={styles.historyTitle}>
-                    Últimos pagamentos
-                  </Text>
-
-                  {payments.length === 0 ? (
-                    <Text style={styles.emptyText}>
-                      Nenhuma transação
-                    </Text>
-                  ) : (
-                    payments.map((item) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={
-                          styles.historyCard
-                        }
-                        onPress={() =>
-                          openPayment(item)
-                        }
-                      >
-                        <View>
-                          <Text
-                            style={
-                              styles.historyName
-                            }
-                          >
-                            {item.name}
-                          </Text>
-
-                          <Text
-                            style={
-                              styles.historyDate
-                            }
-                          >
-                            {item.date}
-                          </Text>
-
-                          <Text
-                            style={
-                              styles.historyCardNumber
-                            }
-                          >
-                            {item.card}
-                          </Text>
-
-                          <Text
-                            style={{
-                              color: "#2563eb",
-                              fontWeight: "600",
-                            }}
-                          >
-                            {item.brand}
-                          </Text>
-                        </View>
-
-                        <Text
-                          style={
-                            styles.historyPrice
-                          }
-                        >
-                          {item.price}
-                        </Text>
-                      </TouchableOpacity>
-                    ))
-                  )}
-                </View>
-              )}
-            </View>
-          </ViewShot>
-        </ScrollView>
+          <TouchableOpacity
+            onPress={() => setPaymentSuccess(false)}
+            style={styles.button}
+          >
+            <Text style={{ color: "#fff" }}>Voltar</Text>
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     );
   }
 
-  /* ================= UI ================= */
-
+  // 🧾 UI
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={
-        Platform.OS === "ios"
-          ? "padding"
-          : "height"
-      }
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <SafeAreaView style={styles.container}>
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{
-            paddingBottom: 120,
-            flexGrow: 1,
-            justifyContent: "center",
-          }}
-        >
-          {isAdmin && (
-            <TouchableOpacity
-              onPress={() =>
-                setPaymentSuccess(true)
-              }
-              style={styles.historyButtonTop}
-            >
-              <Text
-                style={
-                  styles.historyButtonTopText
-                }
-              >
-                Ver histórico
-              </Text>
-            </TouchableOpacity>
-          )}
-
+        <ScrollView contentContainerStyle={{ padding: 20 }}>
           <View style={styles.card}>
             <Image
               source={{
@@ -477,131 +204,57 @@ export default function PaymentScreen() {
               style={styles.logo}
             />
 
-            <Text style={styles.title}>
-              Checkout Premium
-            </Text>
-
-            <Text style={styles.subtitle}>
-              Pagamento seguro
-            </Text>
-
-            <View style={styles.priceBox}>
-              <Text style={styles.price}>
-                R$ 10,00
-              </Text>
-            </View>
-
-            <Text style={styles.label}>
-              Número do cartão
-            </Text>
+            <Text style={styles.title}>Checkout Premium</Text>
+            <Text style={styles.subtitle}>Pagamento seguro</Text>
 
             <TextInput
-              placeholder="0000 0000 0000 0000"
-              style={styles.input}
-              keyboardType="numeric"
+              placeholder="Número do cartão"
               value={cardNumber}
               onChangeText={formatCardNumber}
+              style={styles.input}
+              keyboardType="numeric"
             />
-
-            {cardNumber.length > 0 && (
-              <Text style={styles.brandText}>
-                Bandeira: {cardBrand}
-              </Text>
-            )}
-
-            <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>
-                  Validade
-                </Text>
-
-                <TextInput
-                  placeholder="MM / AA"
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={expiry}
-                  onChangeText={formatExpiry}
-                  maxLength={7}
-                />
-
-                {expiryError !== "" && (
-                  <Text
-                    style={styles.errorText}
-                  >
-                    {expiryError}
-                  </Text>
-                )}
-              </View>
-
-              <View style={{ width: 10 }} />
-
-              <View style={{ flex: 1 }}>
-                <Text style={styles.label}>
-                  CVV
-                </Text>
-
-                <TextInput
-                  placeholder="CVV"
-                  style={styles.input}
-                  keyboardType="numeric"
-                  value={cvv}
-                  onChangeText={(text) => {
-                    const cleaned =
-                      text.replace(/\D/g, "");
-
-                    setCvv(
-                      cleaned.slice(0, 4)
-                    );
-                  }}
-                  maxLength={4}
-                />
-              </View>
-            </View>
-
-            <Text style={styles.label}>
-              Nome no cartão
-            </Text>
 
             <TextInput
-              placeholder="Seu nome"
-              style={styles.input}
+              placeholder="Nome no cartão"
               value={cardName}
               onChangeText={setCardName}
+              style={styles.input}
             />
 
-            <Animated.View
-              style={{
-                transform: [
-                  { scale: scaleAnim },
-                ],
-              }}
-            >
-              <TouchableOpacity
-                style={[
-                  styles.button,
-                  isLoading && {
-                    opacity: 0.7,
-                  },
-                ]}
-                onPress={handlePayment}
-                disabled={isLoading}
-                onPressIn={handlePressIn}
-                onPressOut={handlePressOut}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text
-                    style={styles.buttonText}
-                  >
-                    Pagar agora
-                  </Text>
-                )}
-              </TouchableOpacity>
-            </Animated.View>
+            <TextInput
+              placeholder="MM/AA"
+              value={expiry}
+              onChangeText={formatExpiry}
+              style={styles.input}
+              keyboardType="numeric"
+            />
 
-            <Text style={styles.footer}>
-              Pagamento 100% seguro
+            <TextInput
+              placeholder="CVV"
+              value={cvv}
+              onChangeText={setCvv}
+              style={styles.input}
+              keyboardType="numeric"
+            />
+
+            <TouchableOpacity
+              onPress={handlePayment}
+              style={styles.button}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={{ color: "#fff", fontWeight: "bold" }}>
+                  Pagar agora
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            {/* STATUS REAL TIME */}
+            <Text style={{ marginTop: 15, fontSize: 16, textAlign: "center" }}>
+              Status: {status || "aguardando pagamento..."}
             </Text>
           </View>
         </ScrollView>
@@ -613,275 +266,51 @@ export default function PaymentScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f4f6f8",
-    padding: 14,
+    backgroundColor: "#f3f4f6",
   },
-
-  loginButton: {
-    position: "absolute",
-    top: 50,
-    right: 20,
-    backgroundColor: "#111827",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    zIndex: 999,
-  },
-
-  loginText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-
-  historyButtonTop: {
-    position: "absolute",
-    top: 50,
-    left: 20,
-    backgroundColor: "#2563eb",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    zIndex: 999,
-  },
-
-  historyButtonTopText: {
-    color: "#fff",
-    fontWeight: "600",
-  },
-
   card: {
     backgroundColor: "#fff",
-    borderRadius: 22,
-    padding: 22,
-    width: "100%",
-    maxWidth: 420,
-    elevation: 6,
-    alignSelf: "center",
-    marginTop: 80,
+    padding: 20,
+    borderRadius: 20,
   },
-
   logo: {
     width: 60,
     height: 60,
     alignSelf: "center",
-    marginBottom: 12,
+    marginBottom: 10,
   },
-
   title: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "bold",
     textAlign: "center",
   },
-
   subtitle: {
     textAlign: "center",
-    color: "#777",
-    marginBottom: 14,
+    color: "#666",
+    marginBottom: 20,
   },
-
-  priceBox: {
-    backgroundColor: "#eef4ff",
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 18,
-  },
-
-  price: {
-    fontSize: 30,
-    fontWeight: "bold",
-    textAlign: "center",
-    color: "#2563eb",
-  },
-
-  label: {
-    marginBottom: 6,
-    fontWeight: "600",
-  },
-
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
-    borderRadius: 12,
+    borderRadius: 10,
     padding: 12,
-    marginBottom: 12,
-    backgroundColor: "#fafafa",
+    marginBottom: 10,
   },
-
-  brandText: {
-    marginBottom: 12,
-    fontWeight: "600",
-    color: "#2563eb",
-  },
-
-  errorText: {
-    color: "#dc2626",
-    fontSize: 12,
-    marginTop: -8,
-    marginBottom: 8,
-    fontWeight: "600",
-  },
-
-  row: {
-    flexDirection: "row",
-  },
-
   button: {
     backgroundColor: "#2563eb",
-    padding: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    marginTop: 6,
-  },
-
-  buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 15,
-  },
-
-  footer: {
-    textAlign: "center",
-    marginTop: 12,
-    color: "#888",
-    fontSize: 12,
-  },
-
-  successContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 28,
-    padding: 30,
-    alignItems: "center",
-  },
-
-  successIcon: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#dcfce7",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-
-  check: {
-    fontSize: 38,
-    color: "#16a34a",
-    fontWeight: "bold",
-  },
-
-  successTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    marginBottom: 10,
-  },
-
-  backButton: {
-    backgroundColor: "#2563eb",
     padding: 14,
-    borderRadius: 14,
-    width: "100%",
-    alignItems: "center",
-    marginTop: 20,
-  },
-
-  backButtonText: {
-    color: "#fff",
-    fontWeight: "bold",
-  },
-
-  historyContainer: {
-    width: "100%",
-    marginTop: 20,
-  },
-
-  historyTitle: {
-    fontSize: 16,
-    fontWeight: "bold",
-    marginBottom: 10,
-  },
-
-  emptyText: {
-    textAlign: "center",
-    color: "#777",
-    marginTop: 20,
-  },
-
-  historyCard: {
-    backgroundColor: "#f9fafb",
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-
-  historyName: {
-    fontWeight: "bold",
-  },
-
-  historyDate: {
-    fontSize: 12,
-    color: "#666",
-  },
-
-  historyCardNumber: {
-    fontSize: 11,
-    color: "#999",
-  },
-
-  historyPrice: {
-    fontWeight: "bold",
-    color: "#16a34a",
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-
-  modalCard: {
-    width: "100%",
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-  },
-
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 15,
-    textAlign: "center",
-  },
-
-  modalInfo: {
-    marginBottom: 12,
-    backgroundColor: "#f9fafb",
-    padding: 12,
     borderRadius: 12,
-  },
-
-  modalLabel: {
-    fontSize: 12,
-    color: "#666",
-  },
-
-  modalValue: {
-    fontWeight: "bold",
-  },
-
-  closeButton: {
-    backgroundColor: "#2563eb",
-    padding: 14,
-    borderRadius: 14,
     alignItems: "center",
     marginTop: 10,
   },
-
-  closeButtonText: {
-    color: "#fff",
+  successBox: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  successText: {
+    fontSize: 22,
     fontWeight: "bold",
+    marginBottom: 20,
   },
 });
