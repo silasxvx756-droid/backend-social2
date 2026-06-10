@@ -165,6 +165,9 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
 
 app.post("/card-payment", async (req, res) => {
   try {
+    console.log("📦 BODY RECEBIDO:");
+    console.dir(req.body, { depth: null });
+
     const {
       token,
       paymentMethodId,
@@ -174,7 +177,10 @@ app.post("/card-payment", async (req, res) => {
     } = req.body;
 
     if (!token || !paymentMethodId || !email) {
-      return res.status(400).json({ error: "Dados inválidos" });
+      return res.status(400).json({
+        success: false,
+        error: "Dados inválidos",
+      });
     }
 
     const result = await paymentClient.create({
@@ -184,15 +190,20 @@ app.post("/card-payment", async (req, res) => {
         description: "Checkout Premium",
         installments: 1,
         payment_method_id: paymentMethodId,
-        payer: { email },
+        payer: {
+          email,
+        },
       },
     });
+
+    console.log("✅ RESPOSTA MERCADO PAGO:");
+    console.dir(result, { depth: null });
 
     const saved = await PaymentModel.create({
       id: String(result.id),
       name: name || "Pagamento",
       price: 400,
-      status: "pending",
+      status: result.status || "pending",
       email,
       userId,
       brand: paymentMethodId,
@@ -204,33 +215,29 @@ app.post("/card-payment", async (req, res) => {
     res.json({
       success: true,
       payment: saved,
+      mercadoPago: result,
     });
   } catch (err) {
-    console.log("❌ erro payment:", err);
+    console.log("=================================");
+    console.log("❌ ERRO MERCADO PAGO");
+    console.log("=================================");
+
+    console.log("NAME:", err.name);
+    console.log("MESSAGE:", err.message);
+
+    if (err.cause) {
+      console.log("CAUSE:");
+      console.dir(err.cause, { depth: null });
+    }
+
+    console.log("ERRO COMPLETO:");
+    console.dir(err, { depth: null });
+
     res.status(500).json({
       success: false,
       error: err.message,
+      cause: err.cause || null,
     });
-  }
-});
-
-/* ================= CHECK STATUS (MONGO + MP) ================= */
-
-app.get("/payment/:id", async (req, res) => {
-  try {
-    const paymentId = req.params.id;
-
-    const mpPayment = await paymentClient.get({ id: paymentId });
-
-    const updated = await PaymentModel.findOneAndUpdate(
-      { id: paymentId },
-      { status: mpPayment.status },
-      { new: true }
-    );
-
-    res.json(updated);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
