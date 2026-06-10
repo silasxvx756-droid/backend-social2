@@ -13,6 +13,11 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
+console.log(
+  "MP_ACCESS_TOKEN início:",
+  process.env.MP_ACCESS_TOKEN?.substring(0, 15)
+);
+
 console.log("=================================");
 console.log(
   "MP_ACCESS_TOKEN:",
