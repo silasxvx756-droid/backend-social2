@@ -170,6 +170,14 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
 
 app.post("/card-payment", async (req, res) => {
   try {
+    console.log("=================================");
+    console.log("🔥 ROTA CARD-PAYMENT EXECUTADA");
+    console.log(
+      "TOKEN MP:",
+      process.env.MP_ACCESS_TOKEN?.substring(0, 25)
+    );
+    console.log("=================================");
+
     console.log("📦 BODY RECEBIDO:");
     console.dir(req.body, { depth: null });
 
@@ -187,6 +195,8 @@ app.post("/card-payment", async (req, res) => {
         error: "Dados inválidos",
       });
     }
+
+    console.log("🚀 CRIANDO PAGAMENTO NO MERCADO PAGO");
 
     const result = await paymentClient.create({
       body: {
