@@ -1,5 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
-
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -18,14 +17,13 @@ import {
 import { useUser } from "@clerk/clerk-expo";
 import io from "socket.io-client";
 
-const socket = io("https://backend-social-app-1.onrender.com");
+const socket = io("https://backend-social2-api.onrender.com");
 
 export default function PaymentScreen() {
   const { user } = useUser();
 
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-
   const [status, setStatus] = useState("");
 
   const [cardNumber, setCardNumber] = useState("");
@@ -41,7 +39,7 @@ export default function PaymentScreen() {
     socket.emit("join", user.id);
 
     socket.on("payment-status", (data) => {
-      console.log("📡 status recebido:", data);
+      console.log("📡 status:", data);
       setStatus(data.status);
 
       if (data.status === "approved") {
@@ -49,20 +47,15 @@ export default function PaymentScreen() {
       }
     });
 
-    return () => {
-      socket.off("payment-status");
-    };
+    return () => socket.off("payment-status");
   }, [user]);
 
-  // 💳 detect card brand
+  // 💳 detect brand
   const detectCardBrand = (number) => {
-    const cleaned = number.replace(/\D/g, "");
-
-    if (/^4/.test(cleaned)) return "visa";
-    if (/^(5[1-5]|2[2-7])/.test(cleaned)) return "mastercard";
-    if (/^3[47]/.test(cleaned)) return "amex";
-
-    return "unknown";
+    if (/^4/.test(number)) return "visa";
+    if (/^(5[1-5]|2[2-7])/.test(number)) return "mastercard";
+    if (/^3[47]/.test(number)) return "amex";
+    return "visa";
   };
 
   // 📌 format card
@@ -74,12 +67,11 @@ export default function PaymentScreen() {
     setCardBrand(detectCardBrand(cleaned));
   };
 
-  // 📌 format expiry
+  // 📌 expiry
   const formatExpiry = (text) => {
     const cleaned = text.replace(/\D/g, "").slice(0, 4);
 
     let formatted = cleaned;
-
     if (cleaned.length > 2) {
       formatted = cleaned.slice(0, 2) + "/" + cleaned.slice(2);
     }
@@ -101,7 +93,10 @@ export default function PaymentScreen() {
 
       console.log("🔄 gerando token...");
 
-      // 1. TOKEN MERCADO PAGO
+      const cleanCardNumber = cardNumber.replace(/\D/g, "");
+      const [mm, yy] = expiry.split("/");
+
+      // 1. GERAR TOKEN (Mercado Pago)
       const tokenRes = await fetch(
         "https://api.mercadopago.com/v1/card_tokens",
         {
@@ -111,10 +106,10 @@ export default function PaymentScreen() {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            card_number: cardNumber.replace(/\s/g, ""),
+            card_number: cleanCardNumber,
             security_code: cvv,
-            expiration_month: expiry.split("/")[0],
-            expiration_year: "20" + expiry.split("/")[1],
+            expiration_month: Number(mm),
+            expiration_year: Number("20" + yy),
             cardholder: {
               name: cardName,
             },
@@ -124,15 +119,15 @@ export default function PaymentScreen() {
 
       const tokenData = await tokenRes.json();
 
-      console.log("📦 token:", tokenData);
+      console.log("📦 TOKEN:", tokenData);
 
       if (!tokenData.id) {
-        throw new Error("Erro ao gerar token do cartão");
+        throw new Error(tokenData.message || "Erro ao gerar token");
       }
 
-      // 2. BACKEND PAYMENT
+      // 2. ENVIAR PARA BACKEND
       const response = await fetch(
-        "https://backend-social-app-1.onrender.com/card-payment",
+        "https://backend-social2-api.onrender.com/card-payment",
         {
           method: "POST",
           headers: {
@@ -141,8 +136,9 @@ export default function PaymentScreen() {
           body: JSON.stringify({
             token: tokenData.id,
             installments: 1,
-            paymentMethodId: cardBrand,
-            issuerId: "1",
+            payment_method_id: cardBrand,
+            issuer_id: "1",
+            transaction_amount: 100,
             email: user?.primaryEmailAddress?.emailAddress,
             userId: user?.id,
             name: cardName,
@@ -152,11 +148,11 @@ export default function PaymentScreen() {
 
       const data = await response.json();
 
-      console.log("📦 backend response:", data);
+      console.log("📦 BACKEND:", data);
 
       setIsLoading(false);
 
-      // 3. STATUS CHECK
+      // 3. STATUS
       if (data.status === "approved") {
         setPaymentSuccess(true);
       } else if (data.status === "pending") {
@@ -166,11 +162,12 @@ export default function PaymentScreen() {
       }
     } catch (err) {
       setIsLoading(false);
+      console.log(err);
       Alert.alert("Erro", err.message || "Falha no pagamento");
     }
   };
 
-  // ✅ SUCCESS SCREEN
+  // ✅ SUCCESS
   if (paymentSuccess) {
     return (
       <SafeAreaView style={styles.container}>
@@ -252,9 +249,8 @@ export default function PaymentScreen() {
               )}
             </TouchableOpacity>
 
-            {/* STATUS REAL TIME */}
-            <Text style={{ marginTop: 15, fontSize: 16, textAlign: "center" }}>
-              Status: {status || "aguardando pagamento..."}
+            <Text style={{ marginTop: 15, textAlign: "center" }}>
+              Status: {status || "aguardando..."}
             </Text>
           </View>
         </ScrollView>
@@ -264,31 +260,11 @@ export default function PaymentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f3f4f6",
-  },
-  card: {
-    backgroundColor: "#fff",
-    padding: 20,
-    borderRadius: 20,
-  },
-  logo: {
-    width: 60,
-    height: 60,
-    alignSelf: "center",
-    marginBottom: 10,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: "bold",
-    textAlign: "center",
-  },
-  subtitle: {
-    textAlign: "center",
-    color: "#666",
-    marginBottom: 20,
-  },
+  container: { flex: 1, backgroundColor: "#f3f4f6" },
+  card: { backgroundColor: "#fff", padding: 20, borderRadius: 20 },
+  logo: { width: 60, height: 60, alignSelf: "center", marginBottom: 10 },
+  title: { fontSize: 22, fontWeight: "bold", textAlign: "center" },
+  subtitle: { textAlign: "center", color: "#666", marginBottom: 20 },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
