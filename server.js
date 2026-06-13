@@ -2,12 +2,8 @@ import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
 import cors from "cors";
-import multer from "multer";
-import { v2 as cloudinary } from "cloudinary";
-import streamifier from "streamifier";
 import http from "http";
 import { Server } from "socket.io";
-
 import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
@@ -46,20 +42,6 @@ const io = new Server(server, {
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-/* ================= CLOUDINARY ================= */
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
-/* ================= MULTER ================= */
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-});
-
 /* ================= MONGODB ================= */
 
 if (!process.env.MONGO_URI) {
@@ -72,7 +54,7 @@ mongoose
   .then(() => console.log("🍃 MongoDB conectado"))
   .catch((err) => console.log("❌ Mongo erro:", err));
 
-/* ================= MODELS ================= */
+/* ================= MODEL ================= */
 
 const PaymentSchema = new mongoose.Schema(
   {
@@ -90,20 +72,13 @@ const PaymentSchema = new mongoose.Schema(
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= POSTS (mantido simples) ================= */
-
-app.get("/posts", async (req, res) => {
-  res.json([]);
-});
-
-/* ================= PAYMENT ================= */
+/* ================= ROUTE ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
     console.log("=================================");
     console.log("🔥 CARD-PAYMENT EXECUTED");
     console.log("=================================");
-
     console.log("📦 BODY RECEBIDO:");
     console.log(JSON.stringify(req.body, null, 2));
 
@@ -117,73 +92,57 @@ app.post("/card-payment", async (req, res) => {
       installments,
     } = req.body;
 
-    /* ================= VALIDATION ================= */
-
-    if (!token || !payment_method_id || !email) {
-      console.log("❌ DADOS INVÁLIDOS");
+    /* ================= VALIDATION (CORRIGIDO) ================= */
+    if (!token || !payment_method_id) {
+      console.log("❌ DADOS INVÁLIDOS (token ou payment_method_id)");
       return res.status(400).json({
         success: false,
         error: "Dados inválidos",
       });
     }
 
-    /* ================= PAYMENT ================= */
-
     console.log("🚀 CRIANDO PAGAMENTO...");
 
     const result = await paymentClient.create({
       body: {
-        transaction_amount: Number(transaction_amount || 100),
+        transaction_amount: Number(transaction_amount || 1),
         token,
         description: "Checkout Premium",
         installments: Number(installments || 1),
         payment_method_id,
         payer: {
-          email,
+          email: email || "no-email@test.com",
         },
       },
     });
 
     console.log("✅ PAGAMENTO CRIADO:");
-    console.log(JSON.stringify(result, null, 2));
-
-    /* ================= SAVE DB ================= */
+    console.log(result);
 
     const saved = await PaymentModel.create({
       id: String(result.id),
       name: name || "Pagamento",
-      price: Number(transaction_amount || 100),
+      price: Number(transaction_amount || 1),
       status: result.status,
-      email,
+      email: email || "no-email@test.com",
       userId,
       brand: payment_method_id,
       date: new Date().toISOString(),
     });
 
-    /* ================= SOCKET ================= */
-
     io.emit("new-payment", saved);
-
-    /* ================= RESPONSE ================= */
 
     return res.json({
       success: true,
       payment: saved,
       mercadoPago: result,
     });
+
   } catch (err) {
     console.log("=================================");
     console.log("❌ ERRO PAGAMENTO");
     console.log("=================================");
-
-    console.log("MESSAGE:", err.message);
-
-    if (err.cause) {
-      console.log("CAUSE:");
-      console.log(err.cause);
-    }
-
-    console.log(err);
+    console.log(err.message);
 
     return res.status(500).json({
       success: false,

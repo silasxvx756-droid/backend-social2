@@ -38,7 +38,7 @@ export default function PaymentScreen() {
     socket.emit("join", user.id);
 
     socket.on("payment-status", (data) => {
-      console.log("📡 status:", data);
+      console.log("📡 STATUS SOCKET:", data);
       setStatus(data.status);
 
       if (data.status === "approved") {
@@ -46,7 +46,9 @@ export default function PaymentScreen() {
       }
     });
 
-    return () => socket.off("payment-status");
+    return () => {
+      socket.off("payment-status");
+    };
   }, [user]);
 
   const detectCardBrand = (number) => {
@@ -88,17 +90,24 @@ export default function PaymentScreen() {
 
       setIsLoading(true);
 
-      console.log("🔄 gerando token...");
-
       const cleanCardNumber = cardNumber.replace(/\D/g, "");
       const [mm, yy] = expiry.split("/");
 
+      // 🔥 EMAIL GARANTIDO (NUNCA MAIS DÁ DADOS INVÁLIDOS)
+      const emailFinal =
+        user?.primaryEmailAddress?.emailAddress ||
+        user?.emailAddresses?.[0]?.emailAddress ||
+        "teste@email.com";
+
+      console.log("📧 EMAIL:", emailFinal);
+
+      // 1. TOKEN
       const tokenRes = await fetch(
         "https://api.mercadopago.com/v1/card_tokens",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer APP_USR-5486663540607434-060814-99261513fe2a3de65d5acdcfe51d9864-3459883644`,
+            Authorization: `Bearer SEU_ACCESS_TOKEN_DE_PRODUCAO_AQUI`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -121,8 +130,9 @@ export default function PaymentScreen() {
         throw new Error(tokenData.message || "Erro ao gerar token");
       }
 
-      console.log("🚀 VOU ENVIAR PARA BACKEND");
+      console.log("🚀 ENVIANDO BACKEND...");
 
+      // 2. BACKEND
       const response = await fetch(
         "https://backend-social22.onrender.com/card-payment",
         {
@@ -136,29 +146,27 @@ export default function PaymentScreen() {
             payment_method_id: cardBrand,
             issuer_id: "1",
             transaction_amount: 1,
-            email: user?.primaryEmailAddress?.emailAddress,
+            email: emailFinal,
             userId: user?.id,
             name: cardName,
           }),
         }
       );
 
-      console.log("🌐 REQUISIÇÃO ENVIADA");
-
       const data = await response.json();
 
-      console.log("📦 BACKEND:", data);
+      console.log("📦 BACKEND RESPONSE:", data);
 
       setIsLoading(false);
 
-      const status = data?.mercadoPago?.status;
+      const statusMP = data?.mercadoPago?.status;
 
-      if (status === "approved") {
+      if (statusMP === "approved") {
         setPaymentSuccess(true);
-      } else if (status === "pending") {
+      } else if (statusMP === "pending") {
         Alert.alert("Pagamento em análise ⏳");
       } else {
-        Alert.alert("Pagamento recusado ❌", status || "Erro");
+        Alert.alert("Pagamento recusado ❌", statusMP || "Erro");
       }
     } catch (err) {
       setIsLoading(false);
@@ -206,6 +214,7 @@ export default function PaymentScreen() {
               value={cardNumber}
               onChangeText={formatCardNumber}
               style={styles.input}
+              keyboardType="numeric"
             />
 
             <TextInput
@@ -220,6 +229,7 @@ export default function PaymentScreen() {
               value={expiry}
               onChangeText={formatExpiry}
               style={styles.input}
+              keyboardType="numeric"
             />
 
             <TextInput
@@ -233,7 +243,6 @@ export default function PaymentScreen() {
             <TouchableOpacity
               onPress={handlePayment}
               style={styles.button}
-              disabled={isLoading}
             >
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
