@@ -100,11 +100,10 @@ app.post("/card-payment", async (req, res) => {
       });
     }
 
-    console.log("🚀 CRIANDO PAGAMENTO...");
-    console.log("TOKEN:", token);
-    console.log("PAYMENT METHOD:", payment_method_id);
-    console.log("EMAIL:", email || "no-email@test.com");
-    console.log("AMOUNT:", transaction_amount);
+  console.log("=================================");
+console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
+console.log("TOKEN PREFIX:", process.env.MP_ACCESS_TOKEN?.substring(0, 30));
+console.log("=================================");
 
     const result = await paymentClient.create({
       body: {
