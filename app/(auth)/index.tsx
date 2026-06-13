@@ -17,7 +17,7 @@ import {
 import { useUser } from "@clerk/clerk-expo";
 import io from "socket.io-client";
 
-const socket = io("https://backend-social2-api.onrender.com");
+const socket = io("https://backend-social22.onrender.com");
 
 export default function PaymentScreen() {
   const { user } = useUser();
@@ -32,7 +32,6 @@ export default function PaymentScreen() {
   const [cvv, setCvv] = useState("");
   const [cardBrand, setCardBrand] = useState("");
 
-  // 🔌 SOCKET
   useEffect(() => {
     if (!user?.id) return;
 
@@ -50,7 +49,6 @@ export default function PaymentScreen() {
     return () => socket.off("payment-status");
   }, [user]);
 
-  // 💳 detect brand
   const detectCardBrand = (number) => {
     if (/^4/.test(number)) return "visa";
     if (/^(5[1-5]|2[2-7])/.test(number)) return "mastercard";
@@ -58,7 +56,6 @@ export default function PaymentScreen() {
     return "visa";
   };
 
-  // 📌 format card
   const formatCardNumber = (text) => {
     const cleaned = text.replace(/\D/g, "").slice(0, 16);
     const formatted = cleaned.replace(/(.{4})/g, "$1 ").trim();
@@ -67,7 +64,6 @@ export default function PaymentScreen() {
     setCardBrand(detectCardBrand(cleaned));
   };
 
-  // 📌 expiry
   const formatExpiry = (text) => {
     const cleaned = text.replace(/\D/g, "").slice(0, 4);
 
@@ -79,9 +75,10 @@ export default function PaymentScreen() {
     setExpiry(formatted);
   };
 
-  // 💳 PAYMENT
   const handlePayment = async () => {
     try {
+      console.log("🟢 CLIQUEI NO PAGAR");
+
       if (isLoading) return;
 
       if (!cardNumber || !cardName || !expiry || !cvv) {
@@ -96,7 +93,6 @@ export default function PaymentScreen() {
       const cleanCardNumber = cardNumber.replace(/\D/g, "");
       const [mm, yy] = expiry.split("/");
 
-      // 1. GERAR TOKEN (Mercado Pago)
       const tokenRes = await fetch(
         "https://api.mercadopago.com/v1/card_tokens",
         {
@@ -125,9 +121,10 @@ export default function PaymentScreen() {
         throw new Error(tokenData.message || "Erro ao gerar token");
       }
 
-      // 2. ENVIAR PARA BACKEND
+      console.log("🚀 VOU ENVIAR PARA BACKEND");
+
       const response = await fetch(
-        "https://backend-social2-api.onrender.com/card-payment",
+        "https://backend-social22.onrender.com/card-payment",
         {
           method: "POST",
           headers: {
@@ -138,7 +135,7 @@ export default function PaymentScreen() {
             installments: 1,
             payment_method_id: cardBrand,
             issuer_id: "1",
-            transaction_amount: 100,
+            transaction_amount: 1,
             email: user?.primaryEmailAddress?.emailAddress,
             userId: user?.id,
             name: cardName,
@@ -146,28 +143,30 @@ export default function PaymentScreen() {
         }
       );
 
+      console.log("🌐 REQUISIÇÃO ENVIADA");
+
       const data = await response.json();
 
       console.log("📦 BACKEND:", data);
 
       setIsLoading(false);
 
-      // 3. STATUS
-      if (data.status === "approved") {
+      const status = data?.mercadoPago?.status;
+
+      if (status === "approved") {
         setPaymentSuccess(true);
-      } else if (data.status === "pending") {
+      } else if (status === "pending") {
         Alert.alert("Pagamento em análise ⏳");
       } else {
-        Alert.alert("Pagamento recusado ❌", data.status || "Erro");
+        Alert.alert("Pagamento recusado ❌", status || "Erro");
       }
     } catch (err) {
       setIsLoading(false);
-      console.log(err);
+      console.log("❌ ERRO:", err);
       Alert.alert("Erro", err.message || "Falha no pagamento");
     }
   };
 
-  // ✅ SUCCESS
   if (paymentSuccess) {
     return (
       <SafeAreaView style={styles.container}>
@@ -185,7 +184,6 @@ export default function PaymentScreen() {
     );
   }
 
-  // 🧾 UI
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -202,14 +200,12 @@ export default function PaymentScreen() {
             />
 
             <Text style={styles.title}>Checkout Premium</Text>
-            <Text style={styles.subtitle}>Pagamento seguro</Text>
 
             <TextInput
               placeholder="Número do cartão"
               value={cardNumber}
               onChangeText={formatCardNumber}
               style={styles.input}
-              keyboardType="numeric"
             />
 
             <TextInput
@@ -224,7 +220,6 @@ export default function PaymentScreen() {
               value={expiry}
               onChangeText={formatExpiry}
               style={styles.input}
-              keyboardType="numeric"
             />
 
             <TextInput
@@ -243,9 +238,7 @@ export default function PaymentScreen() {
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={{ color: "#fff", fontWeight: "bold" }}>
-                  Pagar agora
-                </Text>
+                <Text style={{ color: "#fff" }}>Pagar agora</Text>
               )}
             </TouchableOpacity>
 
@@ -264,7 +257,6 @@ const styles = StyleSheet.create({
   card: { backgroundColor: "#fff", padding: 20, borderRadius: 20 },
   logo: { width: 60, height: 60, alignSelf: "center", marginBottom: 10 },
   title: { fontSize: 22, fontWeight: "bold", textAlign: "center" },
-  subtitle: { textAlign: "center", color: "#666", marginBottom: 20 },
   input: {
     borderWidth: 1,
     borderColor: "#ddd",
