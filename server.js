@@ -92,9 +92,8 @@ app.post("/card-payment", async (req, res) => {
       installments,
     } = req.body;
 
-    /* ================= VALIDATION (CORRIGIDO) ================= */
     if (!token || !payment_method_id) {
-      console.log("❌ DADOS INVÁLIDOS (token ou payment_method_id)");
+      console.log("❌ DADOS INVÁLIDOS");
       return res.status(400).json({
         success: false,
         error: "Dados inválidos",
@@ -102,6 +101,10 @@ app.post("/card-payment", async (req, res) => {
     }
 
     console.log("🚀 CRIANDO PAGAMENTO...");
+    console.log("TOKEN:", token);
+    console.log("PAYMENT METHOD:", payment_method_id);
+    console.log("EMAIL:", email || "no-email@test.com");
+    console.log("AMOUNT:", transaction_amount);
 
     const result = await paymentClient.create({
       body: {
@@ -117,7 +120,7 @@ app.post("/card-payment", async (req, res) => {
     });
 
     console.log("✅ PAGAMENTO CRIADO:");
-    console.log(result);
+    console.log(JSON.stringify(result, null, 2));
 
     const saved = await PaymentModel.create({
       id: String(result.id),
@@ -137,17 +140,31 @@ app.post("/card-payment", async (req, res) => {
       payment: saved,
       mercadoPago: result,
     });
-
   } catch (err) {
     console.log("=================================");
     console.log("❌ ERRO PAGAMENTO");
     console.log("=================================");
-    console.log(err.message);
+
+    console.log("MESSAGE:", err.message);
+
+    if (err.cause) {
+      console.log("CAUSE:");
+      console.log(JSON.stringify(err.cause, null, 2));
+    }
+
+    if (err.response) {
+      console.log("RESPONSE:");
+      console.log(JSON.stringify(err.response.data, null, 2));
+    }
+
+    console.log("ERRO COMPLETO:");
+    console.log(err);
 
     return res.status(500).json({
       success: false,
       error: err.message,
       cause: err.cause || null,
+      response: err.response?.data || null,
     });
   }
 });

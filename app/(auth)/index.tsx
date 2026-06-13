@@ -32,13 +32,14 @@ export default function PaymentScreen() {
   const [cvv, setCvv] = useState("");
   const [cardBrand, setCardBrand] = useState("");
 
+  // SOCKET
   useEffect(() => {
     if (!user?.id) return;
 
     socket.emit("join", user.id);
 
     socket.on("payment-status", (data) => {
-      console.log("📡 STATUS SOCKET:", data);
+      console.log("📡 STATUS:", data);
       setStatus(data.status);
 
       if (data.status === "approved") {
@@ -46,14 +47,13 @@ export default function PaymentScreen() {
       }
     });
 
-    return () => {
-      socket.off("payment-status");
-    };
+    return () => socket.off("payment-status");
   }, [user]);
 
+  // CARD BRAND (CORRIGIDO)
   const detectCardBrand = (number) => {
     if (/^4/.test(number)) return "visa";
-    if (/^(5[1-5]|2[2-7])/.test(number)) return "mastercard";
+    if (/^(5[1-5]|2[2-7])/.test(number)) return "master";
     if (/^3[47]/.test(number)) return "amex";
     return "visa";
   };
@@ -77,11 +77,12 @@ export default function PaymentScreen() {
     setExpiry(formatted);
   };
 
+  // PAYMENT
   const handlePayment = async () => {
     try {
-      console.log("🟢 CLIQUEI NO PAGAR");
-
       if (isLoading) return;
+
+      console.log("🟢 CLIQUEI NO PAGAR");
 
       if (!cardNumber || !cardName || !expiry || !cvv) {
         Alert.alert("Erro", "Preencha todos os campos");
@@ -93,21 +94,21 @@ export default function PaymentScreen() {
       const cleanCardNumber = cardNumber.replace(/\D/g, "");
       const [mm, yy] = expiry.split("/");
 
-      // 🔥 EMAIL GARANTIDO (NUNCA MAIS DÁ DADOS INVÁLIDOS)
       const emailFinal =
         user?.primaryEmailAddress?.emailAddress ||
         user?.emailAddresses?.[0]?.emailAddress ||
         "teste@email.com";
 
       console.log("📧 EMAIL:", emailFinal);
+      console.log("💳 BRAND:", cardBrand);
 
-      // 1. TOKEN
+      // 1. TOKEN MP
       const tokenRes = await fetch(
         "https://api.mercadopago.com/v1/card_tokens",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer SEU_ACCESS_TOKEN_DE_PRODUCAO_AQUI`,
+            Authorization: `Bearer APP_USR-5486663540607434-060814-99261513fe2a3de65d5acdcfe51d9864-3459883644`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -130,8 +131,6 @@ export default function PaymentScreen() {
         throw new Error(tokenData.message || "Erro ao gerar token");
       }
 
-      console.log("🚀 ENVIANDO BACKEND...");
-
       // 2. BACKEND
       const response = await fetch(
         "https://backend-social22.onrender.com/card-payment",
@@ -143,7 +142,7 @@ export default function PaymentScreen() {
           body: JSON.stringify({
             token: tokenData.id,
             installments: 1,
-            payment_method_id: cardBrand,
+            payment_method_id: cardBrand, // agora vem "master"
             issuer_id: "1",
             transaction_amount: 1,
             email: emailFinal,
@@ -153,9 +152,10 @@ export default function PaymentScreen() {
         }
       );
 
-      const data = await response.json();
+      console.log("📡 STATUS HTTP:", response.status);
 
-      console.log("📦 BACKEND RESPONSE:", data);
+      const data = await response.json();
+      console.log("📦 BACKEND:", data);
 
       setIsLoading(false);
 
@@ -243,6 +243,7 @@ export default function PaymentScreen() {
             <TouchableOpacity
               onPress={handlePayment}
               style={styles.button}
+              disabled={isLoading}
             >
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
