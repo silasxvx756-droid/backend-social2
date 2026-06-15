@@ -108,7 +108,7 @@ export default function PaymentScreen() {
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer APP_USR-5486663540607434-060814-99261513fe2a3de65d5acdcfe51d9864-3459883644`,
+            Authorization: `Bearer APP_USR-7108909525650215-060814-1b0387b4db66fdbaf456f67eb37abcda-352899060`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -199,63 +199,82 @@ export default function PaymentScreen() {
     >
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={{ padding: 20 }}>
-          <View style={styles.card}>
-            <Image
-              source={{
-                uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
-              }}
-              style={styles.logo}
-            />
+  <View style={styles.checkoutCard}>
+  <Image
+    source={{
+      uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
+    }}
+    style={styles.moneyIcon}
+  />
 
-            <Text style={styles.title}>Checkout Premium</Text>
+  <Text style={styles.checkoutTitle}>Checkout Premium</Text>
+  <Text style={styles.checkoutSubtitle}>Pagamento seguro</Text>
 
-            <TextInput
-              placeholder="Número do cartão"
-              value={cardNumber}
-              onChangeText={formatCardNumber}
-              style={styles.input}
-              keyboardType="numeric"
-            />
+  <View style={styles.priceBox}>
+    <Text style={styles.price}>R$ 10,00</Text>
+  </View>
 
-            <TextInput
-              placeholder="Nome no cartão"
-              value={cardName}
-              onChangeText={setCardName}
-              style={styles.input}
-            />
+  <Text style={styles.label}>Número do cartão</Text>
 
-            <TextInput
-              placeholder="MM/AA"
-              value={expiry}
-              onChangeText={formatExpiry}
-              style={styles.input}
-              keyboardType="numeric"
-            />
+  <TextInput
+    placeholder="0000 0000 0000 0000"
+    value={cardNumber}
+    onChangeText={formatCardNumber}
+    style={styles.cardInput}
+    keyboardType="numeric"
+  />
 
-            <TextInput
-              placeholder="CVV"
-              value={cvv}
-              onChangeText={setCvv}
-              style={styles.input}
-              keyboardType="numeric"
-            />
+  <View style={styles.row}>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.label}>Validade</Text>
 
-            <TouchableOpacity
-              onPress={handlePayment}
-              style={styles.button}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={{ color: "#fff" }}>Pagar agora</Text>
-              )}
-            </TouchableOpacity>
+      <TextInput
+        placeholder="MM / AA"
+        value={expiry}
+        onChangeText={formatExpiry}
+        style={styles.smallInput}
+        keyboardType="numeric"
+      />
+    </View>
 
-            <Text style={{ marginTop: 15, textAlign: "center" }}>
-              Status: {status || "aguardando..."}
-            </Text>
-          </View>
+    <View style={{ flex: 1 }}>
+      <Text style={styles.label}>CVV</Text>
+
+      <TextInput
+        placeholder="CVV"
+        value={cvv}
+        onChangeText={setCvv}
+        style={styles.smallInput}
+        keyboardType="numeric"
+      />
+    </View>
+  </View>
+
+  <Text style={styles.label}>Nome no cartão</Text>
+
+  <TextInput
+    placeholder="Seu nome"
+    value={cardName}
+    onChangeText={setCardName}
+    style={styles.cardInput}
+  />
+
+  <TouchableOpacity
+    style={styles.payButton}
+    onPress={handlePayment}
+    disabled={isLoading}
+  >
+    {isLoading ? (
+      <ActivityIndicator color="#fff" />
+    ) : (
+      <Text style={styles.payButtonText}>Pagar agora</Text>
+    )}
+  </TouchableOpacity>
+
+  <Text style={styles.footerText}>
+    Pagamento 100% seguro
+  </Text>
+</View>
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>
@@ -263,17 +282,110 @@ export default function PaymentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f3f4f6" },
-  card: { backgroundColor: "#fff", padding: 20, borderRadius: 20 },
-  logo: { width: 60, height: 60, alignSelf: "center", marginBottom: 10 },
-  title: { fontSize: 22, fontWeight: "bold", textAlign: "center" },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 10,
-    padding: 12,
+  container: {
+    flex: 1,
+    backgroundColor: "#f3f4f6",
+    justifyContent: "center",
+  },
+
+  checkoutCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    padding: 20,
+    width: "100%",
+    maxWidth: 420,
+    alignSelf: "center",
+  },
+
+  moneyIcon: {
+    width: 55,
+    height: 55,
+    alignSelf: "center",
     marginBottom: 10,
   },
+
+  checkoutTitle: {
+    fontSize: 30,
+    fontWeight: "700",
+    textAlign: "center",
+    color: "#000",
+  },
+
+  checkoutSubtitle: {
+    textAlign: "center",
+    color: "#8a8a8a",
+    marginTop: 2,
+    marginBottom: 15,
+  },
+
+  priceBox: {
+    backgroundColor: "#eef3ff",
+    borderRadius: 14,
+    paddingVertical: 18,
+    marginBottom: 20,
+  },
+
+  price: {
+    textAlign: "center",
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#2563eb",
+  },
+
+  label: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 8,
+    color: "#000",
+  },
+
+  cardInput: {
+    borderWidth: 1.5,
+    borderColor: "#d9d9d9",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 55,
+    marginBottom: 15,
+    fontSize: 16,
+  },
+
+  row: {
+    flexDirection: "row",
+    gap: 10,
+  },
+
+  smallInput: {
+    borderWidth: 1.5,
+    borderColor: "#d9d9d9",
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    height: 55,
+    marginBottom: 15,
+    fontSize: 16,
+  },
+
+  payButton: {
+    backgroundColor: "#2f63e6",
+    height: 56,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 10,
+  },
+
+  payButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 18,
+  },
+
+  footerText: {
+    textAlign: "center",
+    color: "#888",
+    marginTop: 15,
+    fontSize: 13,
+  },
+
   button: {
     backgroundColor: "#2563eb",
     padding: 14,
@@ -281,11 +393,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 10,
   },
+
   successBox: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
   },
+
   successText: {
     fontSize: 22,
     fontWeight: "bold",
