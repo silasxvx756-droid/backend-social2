@@ -144,7 +144,7 @@ export default function PaymentScreen() {
             installments: 1,
             payment_method_id: cardBrand, // agora vem "master"
             issuer_id: "1",
-            transaction_amount: 1,
+            transaction_amount: 400,
             email: emailFinal,
             userId: user?.id,
             name: cardName,

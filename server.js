@@ -107,14 +107,15 @@ console.log("=================================");
 
     const result = await paymentClient.create({
       body: {
-        transaction_amount: Number(transaction_amount || 1),
+        transaction_amount: Number(transaction_amount || 400),
         token,
         description: "Checkout Premium",
         installments: Number(installments || 1),
         payment_method_id,
-        payer: {
-          email: email || "no-email@test.com",
-        },
+       payer: {
+  email: email || "no-email@test.com",
+  first_name: name || "Cliente",
+},
       },
     });
 
