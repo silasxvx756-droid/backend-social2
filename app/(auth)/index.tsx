@@ -31,8 +31,18 @@ export default function PaymentScreen() {
   const [expiry, setExpiry] = useState("");
   const [cvv, setCvv] = useState("");
   const [cardBrand, setCardBrand] = useState("");
+  const [cpf, setCpf] = useState("");
 
-  // SOCKET
+  const [email, setEmail] = useState(
+    user?.primaryEmailAddress?.emailAddress || ""
+  );
+
+  useEffect(() => {
+    if (user?.primaryEmailAddress?.emailAddress) {
+      setEmail(user.primaryEmailAddress.emailAddress);
+    }
+  }, [user]);
+
   useEffect(() => {
     if (!user?.id) return;
 
@@ -47,10 +57,11 @@ export default function PaymentScreen() {
       }
     });
 
-    return () => socket.off("payment-status");
+    return () => {
+      socket.off("payment-status");
+    };
   }, [user]);
 
-  // CARD BRAND (CORRIGIDO)
   const detectCardBrand = (number) => {
     if (/^4/.test(number)) return "visa";
     if (/^(5[1-5]|2[2-7])/.test(number)) return "master";
@@ -70,54 +81,122 @@ export default function PaymentScreen() {
     const cleaned = text.replace(/\D/g, "").slice(0, 4);
 
     let formatted = cleaned;
+
     if (cleaned.length > 2) {
-      formatted = cleaned.slice(0, 2) + "/" + cleaned.slice(2);
+      formatted = `${cleaned.slice(0, 2)}/${cleaned.slice(2)}`;
     }
 
     setExpiry(formatted);
   };
 
-  // PAYMENT
+  // 🔢 Formata o CPF -> 000.000.000-00
+  const formatCpf = (text) => {
+    const cleaned = text.replace(/\D/g, "").slice(0, 11);
+
+    let formatted = cleaned;
+
+    if (cleaned.length > 9) {
+      formatted = `${cleaned.slice(0, 3)}.${cleaned.slice(3, 6)}.${cleaned.slice(
+        6,
+        9
+      )}-${cleaned.slice(9)}`;
+    } else if (cleaned.length > 6) {
+      formatted = `${cleaned.slice(0, 3)}.${cleaned.slice(3, 6)}.${cleaned.slice(
+        6
+      )}`;
+    } else if (cleaned.length > 3) {
+      formatted = `${cleaned.slice(0, 3)}.${cleaned.slice(3)}`;
+    }
+
+    setCpf(formatted);
+  };
+
+  // ✅ Validação real de CPF (dígitos verificadores)
+  const validateCpf = (cpf) => {
+    const cleaned = cpf.replace(/\D/g, "");
+
+    if (cleaned.length !== 11) return false;
+
+    // Rejeita CPFs com todos os dígitos iguais (00000000000, 11111111111...)
+    if (/^(\d)\1{10}$/.test(cleaned)) return false;
+
+    let sum = 0;
+    let remainder;
+
+    for (let i = 1; i <= 9; i++) {
+      sum += parseInt(cleaned.substring(i - 1, i)) * (11 - i);
+    }
+
+    remainder = (sum * 10) % 11;
+    if (remainder === 10 || remainder === 11) remainder = 0;
+    if (remainder !== parseInt(cleaned.substring(9, 10))) return false;
+
+    sum = 0;
+    for (let i = 1; i <= 10; i++) {
+      sum += parseInt(cleaned.substring(i - 1, i)) * (12 - i);
+    }
+
+    remainder = (sum * 10) % 11;
+    if (remainder === 10 || remainder === 11) remainder = 0;
+    if (remainder !== parseInt(cleaned.substring(10, 11))) return false;
+
+    return true;
+  };
+
   const handlePayment = async () => {
     try {
       if (isLoading) return;
 
-      console.log("🟢 CLIQUEI NO PAGAR");
-
-      if (!cardNumber || !cardName || !expiry || !cvv) {
+      if (!cardNumber || !cardName || !expiry || !cvv || !email || !cpf) {
         Alert.alert("Erro", "Preencha todos os campos");
+        return;
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      if (!emailRegex.test(email.trim())) {
+        Alert.alert("Erro", "Digite um e-mail válido");
+        return;
+      }
+
+      // 🔍 Valida o CPF antes de continuar
+      if (!validateCpf(cpf)) {
+        Alert.alert("Erro", "Digite um CPF válido");
         return;
       }
 
       setIsLoading(true);
 
       const cleanCardNumber = cardNumber.replace(/\D/g, "");
+      const cleanCpf = cpf.replace(/\D/g, "");
       const [mm, yy] = expiry.split("/");
 
-      const emailFinal =
-        user?.primaryEmailAddress?.emailAddress ||
-        user?.emailAddresses?.[0]?.emailAddress ||
-        "teste@email.com";
+      const emailFinal = email.trim();
 
       console.log("📧 EMAIL:", emailFinal);
       console.log("💳 BRAND:", cardBrand);
+      console.log("🪪 CPF:", cleanCpf);
 
-      // 1. TOKEN MP
       const tokenRes = await fetch(
         "https://api.mercadopago.com/v1/card_tokens",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer APP_USR-7108909525650215-060814-1b0387b4db66fdbaf456f67eb37abcda-352899060`,
+            Authorization:
+              "Bearer APP_USR-7108909525650215-060814-1b0387b4db66fdbaf456f67eb37abcda-352899060",
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             card_number: cleanCardNumber,
             security_code: cvv,
             expiration_month: Number(mm),
-            expiration_year: Number("20" + yy),
+            expiration_year: Number(`20${yy}`),
             cardholder: {
               name: cardName,
+              identification: {
+                type: "CPF",
+                number: cleanCpf,
+              },
             },
           }),
         }
@@ -131,7 +210,6 @@ export default function PaymentScreen() {
         throw new Error(tokenData.message || "Erro ao gerar token");
       }
 
-      // 2. BACKEND
       const response = await fetch(
         "https://backend-social22.onrender.com/card-payment",
         {
@@ -142,12 +220,13 @@ export default function PaymentScreen() {
           body: JSON.stringify({
             token: tokenData.id,
             installments: 1,
-            payment_method_id: cardBrand, // agora vem "master"
+            payment_method_id: cardBrand,
             issuer_id: "1",
             transaction_amount: 400,
             email: emailFinal,
             userId: user?.id,
             name: cardName,
+            cpf: cleanCpf, // 🪪 enviando CPF para o backend
           }),
         }
       );
@@ -155,6 +234,7 @@ export default function PaymentScreen() {
       console.log("📡 STATUS HTTP:", response.status);
 
       const data = await response.json();
+
       console.log("📦 BACKEND:", data);
 
       setIsLoading(false);
@@ -171,7 +251,8 @@ export default function PaymentScreen() {
     } catch (err) {
       setIsLoading(false);
       console.log("❌ ERRO:", err);
-      Alert.alert("Erro", err.message || "Falha no pagamento");
+
+      Alert.alert("Erro", err?.message || "Falha ao processar pagamento");
     }
   };
 
@@ -199,82 +280,118 @@ export default function PaymentScreen() {
     >
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={{ padding: 20 }}>
-  <View style={styles.checkoutCard}>
-  <Image
-    source={{
-      uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
-    }}
-    style={styles.moneyIcon}
-  />
+          <View style={styles.checkoutCard}>
+            <Image
+              source={{
+                uri: "https://cdn-icons-png.flaticon.com/512/2489/2489756.png",
+              }}
+              style={styles.moneyIcon}
+            />
 
-  <Text style={styles.checkoutTitle}>Checkout Premium</Text>
-  <Text style={styles.checkoutSubtitle}>Pagamento seguro</Text>
+            <Text style={styles.checkoutTitle}>Checkout Premium</Text>
 
-  <View style={styles.priceBox}>
-    <Text style={styles.price}>R$ 10,00</Text>
-  </View>
+            <Text style={styles.checkoutSubtitle}>Pagamento seguro</Text>
 
-  <Text style={styles.label}>Número do cartão</Text>
+            <View style={styles.priceBox}>
+              <Text style={styles.price}>R$ 10,00</Text>
+            </View>
 
-  <TextInput
-    placeholder="0000 0000 0000 0000"
-    value={cardNumber}
-    onChangeText={formatCardNumber}
-    style={styles.cardInput}
-    keyboardType="numeric"
-  />
+            <Text style={styles.label}>Número do cartão</Text>
 
-  <View style={styles.row}>
-    <View style={{ flex: 1 }}>
-      <Text style={styles.label}>Validade</Text>
+            <TextInput
+              placeholder="0000 0000 0000 0000"
+              value={cardNumber}
+              onChangeText={formatCardNumber}
+              style={styles.cardInput}
+              keyboardType="numeric"
+            />
 
-      <TextInput
-        placeholder="MM / AA"
-        value={expiry}
-        onChangeText={formatExpiry}
-        style={styles.smallInput}
-        keyboardType="numeric"
-      />
-    </View>
+            <View style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Validade</Text>
 
-    <View style={{ flex: 1 }}>
-      <Text style={styles.label}>CVV</Text>
+                <TextInput
+                  placeholder="MM/AA"
+                  value={expiry}
+                  onChangeText={formatExpiry}
+                  style={styles.smallInput}
+                  keyboardType="numeric"
+                />
+              </View>
 
-      <TextInput
-        placeholder="CVV"
-        value={cvv}
-        onChangeText={setCvv}
-        style={styles.smallInput}
-        keyboardType="numeric"
-      />
-    </View>
-  </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>CVV</Text>
 
-  <Text style={styles.label}>Nome no cartão</Text>
+                <TextInput
+                  placeholder="123"
+                  value={cvv}
+                  onChangeText={setCvv}
+                  style={styles.smallInput}
+                  keyboardType="numeric"
+                  secureTextEntry
+                />
+              </View>
+            </View>
 
-  <TextInput
-    placeholder="Seu nome"
-    value={cardName}
-    onChangeText={setCardName}
-    style={styles.cardInput}
-  />
+            <Text style={styles.label}>Nome no cartão</Text>
 
-  <TouchableOpacity
-    style={styles.payButton}
-    onPress={handlePayment}
-    disabled={isLoading}
-  >
-    {isLoading ? (
-      <ActivityIndicator color="#fff" />
-    ) : (
-      <Text style={styles.payButtonText}>Pagar agora</Text>
-    )}
-  </TouchableOpacity>
+            <TextInput
+              placeholder="Seu nome"
+              value={cardName}
+              onChangeText={setCardName}
+              style={styles.cardInput}
+            />
 
-  <Text style={styles.footerText}>
-    Pagamento 100% seguro
-  </Text>
-</View>
+            {/* 🪪 Campo de CPF */}
+            <Text style={styles.label}>CPF</Text>
+
+            <TextInput
+              placeholder="000.000.000-00"
+              value={cpf}
+              onChangeText={formatCpf}
+              style={styles.cardInput}
+              keyboardType="numeric"
+              maxLength={14}
+            />
+
+            <Text style={styles.label}>E-mail</Text>
+
+            <TextInput
+              placeholder="seuemail@exemplo.com"
+              value={email}
+              onChangeText={setEmail}
+              style={styles.cardInput}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+
+            <TouchableOpacity
+              style={styles.payButton}
+              onPress={handlePayment}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.payButtonText}>Pagar agora</Text>
+              )}
+            </TouchableOpacity>
+
+            {!!status && (
+              <Text
+                style={{
+                  textAlign: "center",
+                  marginTop: 12,
+                  color: "#666",
+                }}
+              >
+                Status: {status}
+              </Text>
+            )}
+
+            <Text style={styles.footerText}>Pagamento 100% seguro</Text>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </KeyboardAvoidingView>

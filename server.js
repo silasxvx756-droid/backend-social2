@@ -1,3 +1,4 @@
+
 import express from "express";
 import mongoose from "mongoose";
 import dotenv from "dotenv";
@@ -82,12 +83,14 @@ app.post("/card-payment", async (req, res) => {
     console.log("📦 BODY RECEBIDO:");
     console.log(JSON.stringify(req.body, null, 2));
 
+    // ✅ CORREÇÃO 1: desestruturação completa com CPF
     const {
       token,
       payment_method_id,
       email,
       userId,
       name,
+      cpf,
       transaction_amount,
       installments,
     } = req.body;
@@ -100,10 +103,10 @@ app.post("/card-payment", async (req, res) => {
       });
     }
 
-  console.log("=================================");
-console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
-console.log("TOKEN PREFIX:", process.env.MP_ACCESS_TOKEN?.substring(0, 30));
-console.log("=================================");
+    console.log("=================================");
+    console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
+    console.log("TOKEN PREFIX:", process.env.MP_ACCESS_TOKEN?.substring(0, 30));
+    console.log("=================================");
 
     const result = await paymentClient.create({
       body: {
@@ -112,16 +115,21 @@ console.log("=================================");
         description: "Checkout Premium",
         installments: Number(installments || 1),
         payment_method_id,
-       payer: {
-  email: email || "no-email@test.com",
-  first_name: name || "Cliente",
-},
+        payer: {
+          email,
+          first_name: name || "Cliente",
+          identification: {
+            type: "CPF",
+            number: cpf,
+          },
+        },
       },
     });
 
     console.log("✅ PAGAMENTO CRIADO:");
     console.log(JSON.stringify(result, null, 2));
 
+    // ✅ CORREÇÃO 2: await direto no PaymentModel.create
     const saved = await PaymentModel.create({
       id: String(result.id),
       name: name || "Pagamento",
