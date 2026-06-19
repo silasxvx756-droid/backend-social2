@@ -28,7 +28,7 @@ const paymentClient = new Payment(mpClient);
 const app = express();
 const server = http.createServer(app);
 
-/* ================= SOCKET.IO ================= */
+/* ================= SOCKET ================= */
 
 const io = new Server(server, {
   cors: {
@@ -39,7 +39,7 @@ const io = new Server(server, {
 
 /* ================= MIDDLEWARE ================= */
 
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 /* ================= MONGO ================= */
@@ -72,7 +72,7 @@ const PaymentSchema = new mongoose.Schema(
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROUTE PAYMENT (BRICK BACKEND) ================= */
+/* ================= PAYMENT ROUTE (BRICK) ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
@@ -104,13 +104,14 @@ app.post("/card-payment", async (req, res) => {
       description: "Checkout Premium",
       installments: Number(installments || 1),
       payment_method_id,
+
       payer: {
-        email,
+        email: email?.trim(),
         first_name: name || "Cliente",
         identification: cpf
           ? {
               type: "CPF",
-              number: cpf,
+              number: cpf.replace(/\D/g, ""),
             }
           : undefined,
       },
@@ -125,7 +126,7 @@ app.post("/card-payment", async (req, res) => {
     });
 
     console.log("=================================");
-    console.log("✅ PAGAMENTO RETORNO MP:");
+    console.log("✅ RESPOSTA MP:");
     console.log(JSON.stringify(result, null, 2));
 
     const saved = await PaymentModel.create({
@@ -139,11 +140,20 @@ app.post("/card-payment", async (req, res) => {
       date: new Date().toISOString(),
     });
 
-    io.emit("payment-status", {
-      userId,
-      status: result.status,
-      paymentId: result.id,
-    });
+    /* ================= SOCKET (CORRETO) ================= */
+
+    if (userId) {
+      io.to(userId).emit("payment-status", {
+        userId,
+        status: result.status,
+        paymentId: result.id,
+      });
+    } else {
+      io.emit("payment-status", {
+        status: result.status,
+        paymentId: result.id,
+      });
+    }
 
     return res.json({
       success: true,
@@ -154,17 +164,21 @@ app.post("/card-payment", async (req, res) => {
   } catch (err) {
     console.log("=================================");
     console.log("❌ ERRO PAYMENT");
-    console.log(err?.message);
 
-    if (err?.response?.data) {
-      console.log("MP ERROR:");
-      console.log(err.response.data);
+    console.log("MESSAGE:", err.message);
+
+    if (err.cause) {
+      console.log("CAUSE:", JSON.stringify(err.cause, null, 2));
+    }
+
+    if (err.response?.data) {
+      console.log("MP ERROR:", JSON.stringify(err.response.data, null, 2));
     }
 
     return res.status(500).json({
       success: false,
       error: err.message,
-      details: err?.response?.data || null,
+      details: err.response?.data || null,
     });
   }
 });
