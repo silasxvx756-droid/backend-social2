@@ -8,14 +8,14 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
-/* ================= LOGS DE INICIALIZAÇÃO ================= */
+/* ================= LOGS ================= */
 
 console.log("=================================");
 console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
 console.log("MONGO_URI:", process.env.MONGO_URI ? "CARREGADO" : "NÃO CARREGADO");
 console.log("=================================");
 
-/* ================= MERCADO PAGO CONFIG ================= */
+/* ================= MP CONFIG ================= */
 
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
@@ -23,7 +23,7 @@ const mpClient = new MercadoPagoConfig({
 
 const paymentClient = new Payment(mpClient);
 
-/* ================= APP & SERVER ================= */
+/* ================= APP ================= */
 
 const app = express();
 const server = http.createServer(app);
@@ -33,16 +33,16 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
+    methods: ["GET", "POST"],
   },
 });
 
-/* ================= MIDDLEWARES ================= */
+/* ================= MIDDLEWARE ================= */
 
-app.use(cors({ origin: "*" }));
+app.use(cors());
 app.use(express.json());
 
-/* ================= MONGODB CONNECTION ================= */
+/* ================= MONGO ================= */
 
 if (!process.env.MONGO_URI) {
   console.error("❌ MONGO_URI não definido");
@@ -52,13 +52,13 @@ if (!process.env.MONGO_URI) {
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("🍃 MongoDB conectado"))
-  .catch((err) => console.log("❌ Mongo erro:", err));
+  .catch((err) => console.log("❌ Mongo error:", err));
 
-/* ================= MONGOOSE MODEL ================= */
+/* ================= MODEL ================= */
 
 const PaymentSchema = new mongoose.Schema(
   {
-    id: String,
+    paymentId: String,
     name: String,
     price: Number,
     status: String,
@@ -72,17 +72,14 @@ const PaymentSchema = new mongoose.Schema(
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROUTES ================= */
+/* ================= ROUTE PAYMENT (BRICK BACKEND) ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
     console.log("=================================");
-    console.log("🔥 CARD-PAYMENT EXECUTED");
-    console.log("=================================");
-    console.log("📦 BODY RECEBIDO:");
+    console.log("🔥 PAYMENT REQUEST");
     console.log(JSON.stringify(req.body, null, 2));
 
-    // Desestruturação do body
     const {
       token,
       payment_method_id,
@@ -94,18 +91,15 @@ app.post("/card-payment", async (req, res) => {
       installments,
     } = req.body;
 
-    // Validação básica
-    if (!token || !payment_method_id) {
-      console.log("❌ DADOS INVÁLIDOS");
+    if (!token || !payment_method_id || !email) {
       return res.status(400).json({
         success: false,
-        error: "Dados inválidos (token ou payment_method_id faltando)",
+        error: "Campos obrigatórios faltando",
       });
     }
 
-    // Montagem do objeto de pagamento
     const paymentData = {
-      transaction_amount: Number(transaction_amount || 400),
+      transaction_amount: Number(transaction_amount || 10),
       token,
       description: "Checkout Premium",
       installments: Number(installments || 1),
@@ -113,90 +107,83 @@ app.post("/card-payment", async (req, res) => {
       payer: {
         email,
         first_name: name || "Cliente",
-        identification: {
-          type: "CPF",
-          number: cpf,
-        },
+        identification: cpf
+          ? {
+              type: "CPF",
+              number: cpf,
+            }
+          : undefined,
       },
     };
 
-    // ================= LOG ADICIONADO =================
-    // Aqui você vê exatamente o que será enviado para o MP
-    console.log("BODY ENVIADO AO MP:");
+    console.log("=================================");
+    console.log("📤 ENVIANDO AO MERCADO PAGO:");
     console.log(JSON.stringify(paymentData, null, 2));
-    // ===================================================
+
+    const result = await paymentClient.create({
+      body: paymentData,
+    });
 
     console.log("=================================");
-    console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
-    console.log("TOKEN PREFIX:", process.env.MP_ACCESS_TOKEN?.substring(0, 30));
-    console.log("=================================");
-
-    // Requisição ao Mercado Pago
-    const result = await paymentClient.create({ body: paymentData });
-
-    console.log("✅ PAGAMENTO CRIADO:");
+    console.log("✅ PAGAMENTO RETORNO MP:");
     console.log(JSON.stringify(result, null, 2));
 
-    // Salvamento no Banco de Dados
     const saved = await PaymentModel.create({
-      id: String(result.id),
+      paymentId: String(result.id),
       name: name || "Pagamento",
-      price: Number(transaction_amount || 1),
+      price: Number(transaction_amount || 10),
       status: result.status,
-      email: email || "no-email@test.com",
+      email,
       userId,
       brand: payment_method_id,
       date: new Date().toISOString(),
     });
 
-    // Emissão via Socket
-    io.emit("new-payment", saved);
+    io.emit("payment-status", {
+      userId,
+      status: result.status,
+      paymentId: result.id,
+    });
 
     return res.json({
       success: true,
-      payment: saved,
       mercadoPago: result,
+      local: saved,
     });
+
   } catch (err) {
     console.log("=================================");
-    console.log("❌ ERRO PAGAMENTO");
-    console.log("=================================");
+    console.log("❌ ERRO PAYMENT");
+    console.log(err?.message);
 
-    console.log("MESSAGE:", err.message);
-
-    if (err.cause) {
-      console.log("CAUSE:");
-      console.log(JSON.stringify(err.cause, null, 2));
+    if (err?.response?.data) {
+      console.log("MP ERROR:");
+      console.log(err.response.data);
     }
-
-    if (err.response) {
-      console.log("RESPONSE:");
-      console.log(JSON.stringify(err.response.data, null, 2));
-    }
-
-    console.log("ERRO COMPLETO:");
-    console.log(err);
 
     return res.status(500).json({
       success: false,
       error: err.message,
-      cause: err.cause || null,
-      response: err.response?.data || null,
+      details: err?.response?.data || null,
     });
   }
 });
 
-/* ================= SOCKET CONNECTION ================= */
+/* ================= SOCKET ================= */
 
 io.on("connection", (socket) => {
   console.log("⚡ Socket conectado:", socket.id);
+
+  socket.on("join", (userId) => {
+    socket.join(userId);
+  });
 
   socket.on("disconnect", () => {
     console.log("⚪ Socket desconectado");
   });
 });
 
-/* ================= START SERVER ================= */
+/* ================= START ================= */
 
 const PORT = process.env.PORT || 5000;
 
