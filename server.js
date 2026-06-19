@@ -9,14 +9,14 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
-/* ================= LOGS ================= */
+/* ================= LOGS DE INICIALIZAÇÃO ================= */
 
 console.log("=================================");
 console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
 console.log("MONGO_URI:", process.env.MONGO_URI ? "CARREGADO" : "NÃO CARREGADO");
 console.log("=================================");
 
-/* ================= MERCADO PAGO ================= */
+/* ================= MERCADO PAGO CONFIG ================= */
 
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN,
@@ -24,12 +24,12 @@ const mpClient = new MercadoPagoConfig({
 
 const paymentClient = new Payment(mpClient);
 
-/* ================= APP ================= */
+/* ================= APP & SERVER ================= */
 
 const app = express();
 const server = http.createServer(app);
 
-/* ================= SOCKET ================= */
+/* ================= SOCKET.IO ================= */
 
 const io = new Server(server, {
   cors: {
@@ -38,12 +38,12 @@ const io = new Server(server, {
   },
 });
 
-/* ================= MIDDLEWARE ================= */
+/* ================= MIDDLEWARES ================= */
 
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-/* ================= MONGODB ================= */
+/* ================= MONGODB CONNECTION ================= */
 
 if (!process.env.MONGO_URI) {
   console.error("❌ MONGO_URI não definido");
@@ -55,7 +55,7 @@ mongoose
   .then(() => console.log("🍃 MongoDB conectado"))
   .catch((err) => console.log("❌ Mongo erro:", err));
 
-/* ================= MODEL ================= */
+/* ================= MONGOOSE MODEL ================= */
 
 const PaymentSchema = new mongoose.Schema(
   {
@@ -73,7 +73,7 @@ const PaymentSchema = new mongoose.Schema(
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROUTE ================= */
+/* ================= ROUTES ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
@@ -83,7 +83,7 @@ app.post("/card-payment", async (req, res) => {
     console.log("📦 BODY RECEBIDO:");
     console.log(JSON.stringify(req.body, null, 2));
 
-    // ✅ CORREÇÃO 1: desestruturação completa com CPF
+    // Desestruturação do body
     const {
       token,
       payment_method_id,
@@ -95,41 +95,50 @@ app.post("/card-payment", async (req, res) => {
       installments,
     } = req.body;
 
+    // Validação básica
     if (!token || !payment_method_id) {
       console.log("❌ DADOS INVÁLIDOS");
       return res.status(400).json({
         success: false,
-        error: "Dados inválidos",
+        error: "Dados inválidos (token ou payment_method_id faltando)",
       });
     }
+
+    // Montagem do objeto de pagamento
+    const paymentData = {
+      transaction_amount: Number(transaction_amount || 400),
+      token,
+      description: "Checkout Premium",
+      installments: Number(installments || 1),
+      payment_method_id,
+      payer: {
+        email,
+        first_name: name || "Cliente",
+        identification: {
+          type: "CPF",
+          number: cpf,
+        },
+      },
+    };
+
+    // ================= LOG ADICIONADO =================
+    // Aqui você vê exatamente o que será enviado para o MP
+    console.log("BODY ENVIADO AO MP:");
+    console.log(JSON.stringify(paymentData, null, 2));
+    // ===================================================
 
     console.log("=================================");
     console.log("MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "CARREGADO" : "NÃO CARREGADO");
     console.log("TOKEN PREFIX:", process.env.MP_ACCESS_TOKEN?.substring(0, 30));
     console.log("=================================");
 
-    const result = await paymentClient.create({
-      body: {
-        transaction_amount: Number(transaction_amount || 400),
-        token,
-        description: "Checkout Premium",
-        installments: Number(installments || 1),
-        payment_method_id,
-        payer: {
-          email,
-          first_name: name || "Cliente",
-          identification: {
-            type: "CPF",
-            number: cpf,
-          },
-        },
-      },
-    });
+    // Requisição ao Mercado Pago
+    const result = await paymentClient.create({ body: paymentData });
 
     console.log("✅ PAGAMENTO CRIADO:");
     console.log(JSON.stringify(result, null, 2));
 
-    // ✅ CORREÇÃO 2: await direto no PaymentModel.create
+    // Salvamento no Banco de Dados
     const saved = await PaymentModel.create({
       id: String(result.id),
       name: name || "Pagamento",
@@ -141,6 +150,7 @@ app.post("/card-payment", async (req, res) => {
       date: new Date().toISOString(),
     });
 
+    // Emissão via Socket
     io.emit("new-payment", saved);
 
     return res.json({
@@ -177,7 +187,7 @@ app.post("/card-payment", async (req, res) => {
   }
 });
 
-/* ================= SOCKET ================= */
+/* ================= SOCKET CONNECTION ================= */
 
 io.on("connection", (socket) => {
   console.log("⚡ Socket conectado:", socket.id);
@@ -187,10 +197,11 @@ io.on("connection", (socket) => {
   });
 });
 
-/* ================= START ================= */
+/* ================= START SERVER ================= */
 
 const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server rodando na porta ${PORT}`);
 });
+```
