@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -89,7 +90,6 @@ export default function PaymentScreen() {
     setExpiry(formatted);
   };
 
-  // 🔢 Formata o CPF -> 000.000.000-00
   const formatCpf = (text) => {
     const cleaned = text.replace(/\D/g, "").slice(0, 11);
 
@@ -111,13 +111,11 @@ export default function PaymentScreen() {
     setCpf(formatted);
   };
 
-  // ✅ Validação real de CPF (dígitos verificadores)
   const validateCpf = (cpf) => {
     const cleaned = cpf.replace(/\D/g, "");
 
     if (cleaned.length !== 11) return false;
 
-    // Rejeita CPFs com todos os dígitos iguais (00000000000, 11111111111...)
     if (/^(\d)\1{10}$/.test(cleaned)) return false;
 
     let sum = 0;
@@ -159,7 +157,6 @@ export default function PaymentScreen() {
         return;
       }
 
-      // 🔍 Valida o CPF antes de continuar
       if (!validateCpf(cpf)) {
         Alert.alert("Erro", "Digite um CPF válido");
         return;
@@ -204,7 +201,10 @@ export default function PaymentScreen() {
 
       const tokenData = await tokenRes.json();
 
-      console.log("📦 TOKEN:", tokenData);
+      console.log("=================================");
+      console.log("TOKEN GERADO");
+      console.log("=================================");
+      console.log(JSON.stringify(tokenData, null, 2));
 
       if (!tokenData.id) {
         throw new Error(tokenData.message || "Erro ao gerar token");
@@ -226,7 +226,7 @@ export default function PaymentScreen() {
             email: emailFinal,
             userId: user?.id,
             name: cardName,
-            cpf: cleanCpf, // 🪪 enviando CPF para o backend
+            cpf: cleanCpf,
           }),
         }
       );
@@ -342,7 +342,6 @@ export default function PaymentScreen() {
               style={styles.cardInput}
             />
 
-            {/* 🪪 Campo de CPF */}
             <Text style={styles.label}>CPF</Text>
 
             <TextInput
