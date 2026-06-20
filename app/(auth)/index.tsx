@@ -23,7 +23,7 @@ export default function PaymentScreen() {
   <div id="brick_container"></div>
 
   <script>
-    const mp = new MercadoPago("SUA_PUBLIC_KEY_AQUI");
+    const mp = new MercadoPago("APP_USR-88fc16d5-5925-42b6-a639-fee2d98763ae");
 
     const bricksBuilder = mp.bricks();
 
