@@ -28,13 +28,20 @@ const getBrickHtml = (email, userId, name, cpf) => `
 
         await bricksBuilder.create("payment", "brick_container", {
           initialization: {
-            amount: 10,
+            // VALOR ATUALIZADO PARA 400
+            amount: 400,
           },
           customization: {
             paymentMethods: {
               creditCard: "all",
               debitCard: "all",
-              pix: "all"
+              pix: "all",
+              // RETIRA O PARCELAMENTO: Força o máximo de parcelas a ser 1
+              maxInstallments: 1,
+              // RETIRA CAIXA TEM: Exclui o método de pagamento específico da Caixa
+              excludes: {
+                paymentMethods: ["debit_card_caixa"]
+              }
             }
           },
           callbacks: {
@@ -58,7 +65,8 @@ const getBrickHtml = (email, userId, name, cpf) => `
                     body: JSON.stringify({
                       token: token,
                       payment_method_id: payment_method_id,
-                      transaction_amount: 10,
+                      // VALOR ATUALIZADO NO ENVIO DO BACKEND PARA 400
+                      transaction_amount: 400,
                       installments: Number(installments),
                       email: window.USER_DATA.email, 
                       userId: window.USER_DATA.userId,
@@ -111,7 +119,8 @@ export default function PaymentScreen() {
   if (!dadosConfirmados) {
     return (
       <ScrollView contentContainerStyle={styles.containerForm}>
-        <Text style={styles.titleForm}>Checkout Premium - R$ 10</Text>
+        {/* TEXTO ATUALIZADO PARA EXIBIR R$ 400 */}
+        <Text style={styles.titleForm}>Checkout Premium - R$ 40</Text>
         <Text style={styles.subtitleForm}>Insira os dados do titular do cartão para evitar bloqueios:</Text>
         
         <TextInput

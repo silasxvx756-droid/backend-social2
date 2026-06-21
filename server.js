@@ -85,7 +85,7 @@ app.post("/card-payment", async (req, res) => {
 
     // 2. MONTAGEM DO OBJETO COMPLETO SEGUINDO A DOCUMENTAÇÃO MP
     const paymentData = {
-      transaction_amount: Number(transaction_amount || 12),
+      transaction_amount: Number(transaction_amount || 400),
       token,
       description: "Inscrição Checkout Premium",
       installments: Number(installments || 1),
