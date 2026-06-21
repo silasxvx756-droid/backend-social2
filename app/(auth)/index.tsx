@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from "react-native";
 
-// FUNÇÃO DO HTML: Envia os dados do cliente e resolve a pegadinha do token do Brick
+// FUNÇÃO DO HTML: Injeta os dados reais coletados para validação antifraude
 const getBrickHtml = (email, userId, name, cpf) => `
 <!DOCTYPE html>
 <html>
@@ -97,8 +97,8 @@ export default function PaymentScreen() {
       alert("Por favor, insira um e-mail válido.");
       return;
     }
-    if (inputName.trim().length < 3) {
-      alert("Por favor, insira o nome completo.");
+    if (inputName.trim().split(" ").length < 2) {
+      alert("Por favor, insira seu nome completo (Nome e Sobrenome).");
       return;
     }
     if (inputCpf.replace(/\D/g, "").length !== 11) {
@@ -112,13 +112,14 @@ export default function PaymentScreen() {
     return (
       <ScrollView contentContainerStyle={styles.containerForm}>
         <Text style={styles.titleForm}>Checkout Premium - R$ 10</Text>
-        <Text style={styles.subtitleForm}>Preencha os dados abaixo para liberar o pagamento:</Text>
+        <Text style={styles.subtitleForm}>Insira os dados do titular do cartão para evitar bloqueios:</Text>
         
         <TextInput
           style={styles.input}
-          placeholder="Nome Completo"
+          placeholder="Nome Completo (idêntico ao cartão)"
           value={inputName}
           onChangeText={setInputName}
+          autoCapitalize="words"
         />
 
         <TextInput
@@ -132,10 +133,11 @@ export default function PaymentScreen() {
 
         <TextInput
           style={styles.input}
-          placeholder="CPF (apenas números)"
+          placeholder="CPF (apenas números do titular)"
           value={inputCpf}
           onChangeText={setInputCpf}
           keyboardType="numeric"
+          maxLength={11}
         />
 
         <TouchableOpacity style={styles.button} onPress={iniciarCheckout}>
@@ -148,11 +150,11 @@ export default function PaymentScreen() {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Finalize o seu Pagamento</Text>
-      <Text style={{ textAlign: "center", color: "#666" }}>Comprador: {inputName}</Text>
+      <Text style={{ textAlign: "center", color: "#666", marginBottom: 10 }}>Comprador: {inputName}</Text>
 
       <iframe
         srcDoc={getBrickHtml(inputEmail.trim(), visitorId, inputName.trim(), inputCpf.trim())}
-        style={{ width: "100%", height: "650px", border: "none", marginTop: 20 }}
+        style={{ width: "100%", height: "650px", border: "none" }}
         title="Mercado Pago"
       />
     </View>

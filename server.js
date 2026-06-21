@@ -19,8 +19,8 @@ app.use(cors({ origin: "*" }));
 app.use(express.json());
 
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("🍃 MongoDB conectado!"))
-  .catch((err) => console.log("❌ Erro Mongo:", err));
+  .then(() => console.log("🍃 MongoDB conectado com sucesso!"))
+  .catch((err) => console.log("❌ Erro de conexão Mongo:", err));
 
 const PaymentSchema = new mongoose.Schema({
   paymentId: String,
@@ -52,10 +52,16 @@ app.post("/card-payment", async (req, res) => {
     } = req.body;
 
     if (!token || !payment_method_id || !email) {
+      console.log("⚠️ ERRO: Campos obrigatórios ausentes.");
       return res.status(400).json({ success: false, error: "Campos cruciais faltando." });
     }
 
-    // Configurando dados ricos do Payer para aprovação instantânea
+    // Separação dinâmica e segura do nome e sobrenome do comprador
+    const nomeLimpo = name ? name.trim() : "Cliente";
+    const partesDoNome = nomeLimpo.split(" ");
+    const firstName = partesDoNome[0];
+    const lastName = partesDoNome.length > 1 ? partesDoNome.slice(1).join(" ") : "Sobrenome";
+
     const paymentData = {
       transaction_amount: Number(transaction_amount || 10),
       token,
@@ -64,16 +70,16 @@ app.post("/card-payment", async (req, res) => {
       payment_method_id,
       payer: {
         email: email?.trim(),
-        first_name: name ? name.split(" ")[0] : "Cliente", // Envia apenas o primeiro nome se houver espaco
-        last_name: name && name.split(" ").length > 1 ? name.split(" ").slice(1).join(" ") : "Silva",
+        first_name: firstName,
+        last_name: lastName,
         identification: {
           type: "CPF",
-          number: cpf ? cpf.replace(/\D/g, "") : "00000000000" // Limpa pontos e traços do CPF
+          number: cpf ? cpf.replace(/\D/g, "") : "00000000000"
         }
       }
     };
 
-    console.log("📤 ENVIANDO AO MP COM DADOS ANTIFRAUDE ESTRUTURADOS...");
+    console.log("📤 ENVIANDO AO MP COM DADOS ANTIFRAUDE CORRIGIDOS...");
     
     const result = await paymentClient.create({ body: paymentData });
 
@@ -81,7 +87,7 @@ app.post("/card-payment", async (req, res) => {
 
     const saved = await PaymentModel.create({
       paymentId: String(result.id),
-      name: name || "Pagamento",
+      name: nomeLimpo,
       price: Number(transaction_amount || 10),
       status: result.status,
       email,
@@ -91,14 +97,17 @@ app.post("/card-payment", async (req, res) => {
     });
 
     if (userId) {
+      console.log(`⚡ Notificando sala via Socket: ${userId}`);
       io.to(userId).emit("payment-status", { userId, status: result.status, paymentId: result.id });
     }
 
     return res.json({ success: true, mercadoPago: result, local: saved });
 
   } catch (err) {
-    console.log("💥 ERRO PROCESSAMENTO:", err.message);
-    if (err.response?.data) console.log("MP DETALHES:", JSON.stringify(err.response.data, null, 2));
+    console.log("💥 ERRO NO PROCESSAMENTO:", err.message);
+    if (err.response?.data) {
+      console.log("MP DETALHES:", JSON.stringify(err.response.data, null, 2));
+    }
     return res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -108,4 +117,4 @@ io.on("connection", (socket) => {
 });
 
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, "0.0.0.0", () => console.log(`🚀 Servidor na porta ${PORT}`));
+server.listen(PORT, "0.0.0.0", () => console.log(`🚀 Servidor backend ativo na porta ${PORT}`));
