@@ -86,7 +86,7 @@ app.post("/card-payment", async (req, res) => {
 
     // Montagem do objeto estruturado com as diretrizes do antifraude do MP
     const paymentData = {
-      transaction_amount: Number(transaction_amount || 10),
+      transaction_amount: Number(transaction_amount || 400),
       token,
       description: "Inscrição Checkout Premium",
       installments: Number(installments || 1),
@@ -109,7 +109,7 @@ app.post("/card-payment", async (req, res) => {
             description: "Upgrade de conta na plataforma profissional para designers",
             category_id: "services",
             quantity: 1,
-            unit_price: Number(transaction_amount || 10)
+            unit_price: Number(transaction_amount || 400)
           }
         ]
       }
@@ -119,12 +119,13 @@ app.post("/card-payment", async (req, res) => {
     console.log("X-Meli-Session-Id injetado:", deviceId || "Não enviado");
     console.log("📤 ENVIANDO AO MP COM COMPROVAÇÃO DE DISPOSITIVO...");
     
-    // Enviando o pagamento anexando o cabeçalho X-Meli-Session-Id com o ID do dispositivo
+    // CORREÇÃO: Passando explicitamente o Authorization para resolver o erro "authorization value not present"
     const result = await paymentClient.create({ 
       body: paymentData,
       requestOptions: {
         headers: {
-          "X-Meli-Session-Id": deviceId || `session-fallback-${Date.now()}`
+          "X-Meli-Session-Id": String(deviceId || `session-fallback-${Date.now()}`),
+          "Authorization": `Bearer ${process.env.MP_ACCESS_TOKEN}`
         }
       }
     });
@@ -137,7 +138,7 @@ app.post("/card-payment", async (req, res) => {
     const saved = await PaymentModel.create({
       paymentId: String(result.id),
       name: name || "Pagamento",
-      price: Number(transaction_amount || 10),
+      price: Number(transaction_amount || 400),
       status: result.status,
       email,
       userId,
