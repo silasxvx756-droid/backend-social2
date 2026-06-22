@@ -48,12 +48,12 @@ const PaymentSchema = new mongoose.Schema({
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROTA DE PAGAMENTO COM MOCK ACTIVADO ================= */
+/* ================= ROTA DE PAGAMENTO REAL BLINDADA ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
     console.log("=================================");
-    console.log("🔥 PAYMENT REQUEST RECEIVED (MODO MOCK ACTIVADO)");
+    console.log("🔥 PAYMENT REQUEST RECEIVED (MODO REAL ATIVADO)");
     console.log(JSON.stringify(req.body, null, 2));
     
     const {
@@ -68,6 +68,7 @@ app.post("/card-payment", async (req, res) => {
       deviceId
     } = req.body;
 
+    // Validação estrita de campos
     if (!token || !payment_method_id || !email) {
       console.log("⚠️ REQUISIÇÃO REJEITADA: Faltam campos cruciais.");
       return res.status(400).json({ 
@@ -80,11 +81,42 @@ app.post("/card-payment", async (req, res) => {
     const firstName = name ? name.split(" ")[0] : "Cliente";
     const lastName = name && name.split(" ").length > 1 ? name.split(" ").slice(1).join(" ") : "Silva";
 
+    // Montagem do payload oficial exigido pelo antifraude do Mercado Pago
+    const paymentData = {
+      transaction_amount: Number(transaction_amount || 400),
+      token,
+      description: "Inscrição Checkout Premium",
+      installments: Number(installments || 1),
+      payment_method_id,
+      payer: {
+        email: email?.trim(),
+        first_name: firstName,
+        last_name: lastName,
+        identification: {
+          type: "CPF",
+          number: cpf ? cpf.replace(/\D/g, "") : "00000000000"
+        }
+      },
+      additional_info: {
+        ip_address: clientIp,
+        items: [
+          {
+            id: "premium-access-01",
+            title: "Acesso Premium Procurojob",
+            description: "Upgrade de conta na plataforma profissional para designers",
+            category_id: "services",
+            quantity: 1,
+            unit_price: Number(transaction_amount || 400)
+          }
+        ]
+      }
+    };
+
     console.log("=================================");
-    console.log("X-Meli-Session-Id recebido:", deviceId || "Não enviado");
-    console.log("📤 [MODO MOCK] SIMULANDO APROVAÇÃO...");
+    console.log("X-Meli-Session-Id enviado:", deviceId || "Não enviado");
+    console.log("📤 ENVIANDO PRODUÇÃO AO MERCADO PAGO...");
     
-    /* === CHAMADA REAL COMENTADA TEMPORARIAMENTE ===
+    // CHAMADA REAL À API DO MERCADO PAGO
     const result = await paymentClient.create({ 
       body: paymentData,
       requestOptions: {
@@ -94,23 +126,15 @@ app.post("/card-payment", async (req, res) => {
         }
       }
     });
-    ================================================ */
-
-    // OBJETO MOCK: Força o estado de aprovado ignorando o motor de risco do MP
-    const result = {
-      id: "MOCK-TRANS-" + Date.now(),
-      status: "approved", 
-      status_detail: "accredited"
-    };
 
     console.log("=================================");
-    console.log(`✅ RESPOSTA SIMULADA (MOCK): [${result.status}]`);
+    console.log(`✅ RESPOSTA DO MERCADO PAGO: [${result.status}]`);
     console.log(`🔍 DETALHE DO STATUS: [${result.status_detail}]`);
 
-    // Armazenamento do histórico simulado no MongoDB
+    // Armazenamento do histórico real no MongoDB
     const saved = await PaymentModel.create({
       paymentId: String(result.id),
-      name: name || "Pagamento Mock",
+      name: name || "Pagamento Real",
       price: Number(transaction_amount || 400),
       status: result.status,
       email,
@@ -137,11 +161,16 @@ app.post("/card-payment", async (req, res) => {
 
   } catch (err) {
     console.log("=================================");
-    console.log("💥 ERRO NO PROCESSAMENTO:", err.message);
+    console.log("💥 ERRO NO PROCESSAMENTO REAL:", err.message);
+    
+    if (err.response?.data) {
+      console.log("MP DETALHES INTERNOS:", JSON.stringify(err.response.data, null, 2));
+    }
     
     return res.status(500).json({ 
       success: false, 
-      error: err.message
+      error: err.message,
+      details: err.response?.data || null
     });
   }
 });
@@ -158,5 +187,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Backend com Mock rodando na porta ${PORT}`);
+  console.log(`🚀 Backend REAL rodando na porta ${PORT}`);
 });
