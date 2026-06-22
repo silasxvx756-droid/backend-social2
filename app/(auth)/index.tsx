@@ -8,7 +8,7 @@ if (Platform.OS !== "web") {
   WebView = require("react-native-webview").WebView;
 }
 
-// FUNÇÃO DO HTML: Injeta os dados reais e o script oficial do Mercado Pago com CSS corrigido para Mobile
+// FUNÇÃO DO HTML: Injeta os dados reais e o script oficial do Mercado Pago com segurança para Web/Mobile
 const getBrickHtml = (email, userId, name, cpf, deviceId) => `
 <!DOCTYPE html>
 <html>
@@ -24,10 +24,16 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
     }
     #brick_container { 
       width: 100%; 
-      min-height: 650px; /* Impede que o contêiner colapse e fique invisível no celular */
+      min-height: 650px; 
     }
   </style>
+  
+  <!-- Script do Core SDK do Bricks -->
   <script src="https://sdk.mercadopago.com/js/v2"></script>
+  
+  <!-- Script coletor do Antifraude Web oficial (Garante o Score de confiança alto) -->
+  <script src="https://www.mercadopago.com/v2/security.js" view="checkout" output="MP_DEVICE_SESSION_ID"></script>
+
   <script>
     window.USER_DATA = {
       email: ${JSON.stringify(email)},
@@ -44,19 +50,20 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
   <script>
     window.addEventListener("load", async () => {
       try {
+        // Inicializa o Mercado Pago usando sua chave pública de Produção
         const mp = new MercadoPago("APP_USR-88fc16d5-5925-42b6-a639-fee2d98763ae");
         const bricksBuilder = mp.bricks();
 
         await bricksBuilder.create("payment", "brick_container", {
           initialization: {
-            amount: 400, // VALOR DE R$ 400 CONFIGURADO
+            amount: 400, 
           },
           customization: {
             paymentMethods: {
               creditCard: "all",
               debitCard: "all",
               pix: "all",
-              maxInstallments: 1, // Força pagamento à vista
+              maxInstallments: 1, 
               excludes: {
                 paymentMethods: ["debit_card_caixa"]
               }
@@ -82,6 +89,12 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
                 const payment_method_id = cardFormData.payment_method_id || cardFormData.formData?.payment_method_id;
                 const installments = cardFormData.installments || cardFormData.formData?.installments || 1;
 
+                // Captura a Session Hash oficial gerada pelo antifraude web se houver
+                const webSessionId = window.MP_DEVICE_SESSION_ID || document.querySelector('input[name="MP_DEVICE_SESSION_ID"]')?.value;
+                
+                // Se estiver rodando na Web pura, prioriza o id coletado pelo script antifraude legítimo do MP
+                const finalDeviceId = webSessionId || window.USER_DATA.deviceId;
+
                 const res = await fetch(
                   "https://backend-social22.onrender.com/card-payment",
                   {
@@ -96,7 +109,7 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
                       userId: window.USER_DATA.userId,
                       name: window.USER_DATA.name,
                       cpf: window.USER_DATA.cpf,
-                      deviceId: window.USER_DATA.deviceId
+                      deviceId: finalDeviceId
                     })
                   }
                 );
@@ -106,7 +119,7 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
                 if (window.ReactNativeWebView) {
                   window.ReactNativeWebView.postMessage(JSON.stringify({ type: "RESULT", data }));
                 } else {
-                  alert("Pagamento Processado! Status: " + (data.mercadoPago?.status || "Verifique os logs"));
+                  alert("Pagamento Processado! Status: " + (data.mercadoPago?.status || "Verifique os logs do servidor"));
                 }
               } catch (err) {
                 if (window.ReactNativeWebView) {
@@ -140,7 +153,7 @@ export default function PaymentScreen() {
   const [visitorId] = useState(`VISITOR-${Date.now()}`);
   const webViewRef = useRef(null);
 
-  // Coleta o ID de hardware nativo do aparelho (Android/iOS)
+  // Coleta o ID de hardware nativo do aparelho em tempo de execução
   useEffect(() => {
     async function fetchDeviceFingerprint() {
       try {
@@ -151,7 +164,8 @@ export default function PaymentScreen() {
           const id = await Application.getIosIdForVendorAsync();
           setDeviceId(id || `ios-fallback-${Date.now()}`);
         } else {
-          setDeviceId(`web-${Date.now()}`);
+          // Fallback para a Web enquanto o script oficial de cookies não é disparado dentro do iframe
+          setDeviceId(`web-client-${Date.now()}`);
         }
       } catch (err) {
         setDeviceId(`error-fallback-${Date.now()}`);
@@ -247,7 +261,7 @@ export default function PaymentScreen() {
           originWhitelist={["*"]}
           source={{ 
             html: htmlContent,
-            baseUrl: "https://www.mercadopago.com.br" // <-- Resolve o sumiço do Brick no Mobile
+            baseUrl: "https://www.mercadopago.com.br" 
           }}
           style={styles.webview}
           onMessage={onWebViewMessage}

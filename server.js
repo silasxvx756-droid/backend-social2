@@ -48,12 +48,12 @@ const PaymentSchema = new mongoose.Schema({
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROTA DE PAGAMENTO REAL BLINDADA ================= */
+/* ================= ROTA DE PAGAMENTO WEB REAL BLINDADA ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
     console.log("=================================");
-    console.log("🔥 PAYMENT REQUEST RECEIVED (MODO REAL ATIVADO)");
+    console.log("🔥 PAYMENT REQUEST RECEIVED (MODO WEB PRODUÇÃO)");
     console.log(JSON.stringify(req.body, null, 2));
     
     const {
@@ -65,10 +65,10 @@ app.post("/card-payment", async (req, res) => {
       cpf,
       transaction_amount,
       installments,
-      deviceId
+      deviceId // <-- Aqui chega o MP_DEVICE_SESSION_ID coletado pelo script web
     } = req.body;
 
-    // Validação estrita de campos
+    // Validação de segurança estrita
     if (!token || !payment_method_id || !email) {
       console.log("⚠️ REQUISIÇÃO REJEITADA: Faltam campos cruciais.");
       return res.status(400).json({ 
@@ -77,15 +77,17 @@ app.post("/card-payment", async (req, res) => {
       });
     }
 
+    // Captura o IP real do cliente que acessa o site (crucial para o antifraude web)
     const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    
     const firstName = name ? name.split(" ")[0] : "Cliente";
     const lastName = name && name.split(" ").length > 1 ? name.split(" ").slice(1).join(" ") : "Silva";
 
-    // Montagem do payload oficial exigido pelo antifraude do Mercado Pago
+    // Payload estruturado de acordo com as regras de risco da Web do MP
     const paymentData = {
       transaction_amount: Number(transaction_amount || 400),
       token,
-      description: "Inscrição Checkout Premium",
+      description: "Acesso Premium Procurojob",
       installments: Number(installments || 1),
       payment_method_id,
       payer: {
@@ -102,8 +104,8 @@ app.post("/card-payment", async (req, res) => {
         items: [
           {
             id: "premium-access-01",
-            title: "Acesso Premium Procurojob",
-            description: "Upgrade de conta na plataforma profissional para designers",
+            title: "Upgrade Premium - Procurojob",
+            description: "Plano profissional para designers gráficos",
             category_id: "services",
             quantity: 1,
             unit_price: Number(transaction_amount || 400)
@@ -113,15 +115,15 @@ app.post("/card-payment", async (req, res) => {
     };
 
     console.log("=================================");
-    console.log("X-Meli-Session-Id enviado:", deviceId || "Não enviado");
-    console.log("📤 ENVIANDO PRODUÇÃO AO MERCADO PAGO...");
+    console.log("X-Meli-Session-Id injetado:", deviceId || "⚠️ Sem session ID web");
+    console.log("📤 ENVIANDO REQUISIÇÃO WEB AO MERCADO PAGO...");
     
-    // CHAMADA REAL À API DO MERCADO PAGO
+    // Chamada oficial enviando o Token de Sessão Web legítimo
     const result = await paymentClient.create({ 
       body: paymentData,
       requestOptions: {
         headers: {
-          "X-Meli-Session-Id": String(deviceId || `session-fallback-${Date.now()}`),
+          "X-Meli-Session-Id": String(deviceId),
           "Authorization": `Bearer ${process.env.MP_ACCESS_TOKEN}`
         }
       }
@@ -131,10 +133,10 @@ app.post("/card-payment", async (req, res) => {
     console.log(`✅ RESPOSTA DO MERCADO PAGO: [${result.status}]`);
     console.log(`🔍 DETALHE DO STATUS: [${result.status_detail}]`);
 
-    // Armazenamento do histórico real no MongoDB
+    // Registra a transação no MongoDB
     const saved = await PaymentModel.create({
       paymentId: String(result.id),
-      name: name || "Pagamento Real",
+      name: name || "Pagamento Web Real",
       price: Number(transaction_amount || 400),
       status: result.status,
       email,
@@ -161,10 +163,10 @@ app.post("/card-payment", async (req, res) => {
 
   } catch (err) {
     console.log("=================================");
-    console.log("💥 ERRO NO PROCESSAMENTO REAL:", err.message);
+    console.log("💥 ERRO PROCESSAMENTO WEB:", err.message);
     
     if (err.response?.data) {
-      console.log("MP DETALHES INTERNOS:", JSON.stringify(err.response.data, null, 2));
+      console.log("DETALHES INTERNOS DA REJEIÇÃO MP:", JSON.stringify(err.response.data, null, 2));
     }
     
     return res.status(500).json({ 
@@ -187,5 +189,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Backend REAL rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor Web Produção ativo na porta ${PORT}`);
 });
