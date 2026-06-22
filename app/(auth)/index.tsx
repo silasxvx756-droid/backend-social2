@@ -1,13 +1,32 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform } from "react-native";
+import React, { useState, useEffect, useRef } from "react";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, Dimensions } from "react-native";
 import * as Application from 'expo-application';
 
-// FUNÇÃO DO HTML: Injeta os dados reais coletados para validação antifraude + deviceId
+// Importa a WebView apenas se NÃO estiver rodando na plataforma Web para evitar erros de compilação
+let WebView;
+if (Platform.OS !== "web") {
+  WebView = require("react-native-webview").WebView;
+}
+
+// FUNÇÃO DO HTML: Injeta os dados reais e o script oficial do Mercado Pago com CSS corrigido para Mobile
 const getBrickHtml = (email, userId, name, cpf, deviceId) => `
 <!DOCTYPE html>
 <html>
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <style>
+    html, body { 
+      margin: 0; 
+      padding: 0; 
+      width: 100%; 
+      background-color: #fff; 
+      font-family: -apple-system, sans-serif;
+    }
+    #brick_container { 
+      width: 100%; 
+      min-height: 650px; /* Impede que o contêiner colapse e fique invisível no celular */
+    }
+  </style>
   <script src="https://sdk.mercadopago.com/js/v2"></script>
   <script>
     window.USER_DATA = {
@@ -30,7 +49,7 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
 
         await bricksBuilder.create("payment", "brick_container", {
           initialization: {
-            amount: 400, // VALOR PADRONIZADO PARA R$ 400
+            amount: 400, // VALOR DE R$ 400 CONFIGURADO
           },
           customization: {
             paymentMethods: {
@@ -45,10 +64,17 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
           },
           callbacks: {
             onReady: () => {
-              window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "READY" }));
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: "READY" }));
+              }
             },
             onError: (err) => {
-              window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "ERROR", message: err?.message }));
+              const errMsg = err?.message || "Erro de inicialização do Brick";
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: "ERROR", message: errMsg }));
+              } else {
+                console.error(errMsg);
+              }
             },
             onSubmit: async (cardFormData) => {
               try {
@@ -64,27 +90,40 @@ const getBrickHtml = (email, userId, name, cpf, deviceId) => `
                     body: JSON.stringify({
                       token: token,
                       payment_method_id: payment_method_id,
-                      transaction_amount: 400, // VALOR ENVIADO AO BACKEND CONDIZENTE
+                      transaction_amount: 400,
                       installments: Number(installments),
                       email: window.USER_DATA.email, 
                       userId: window.USER_DATA.userId,
                       name: window.USER_DATA.name,
                       cpf: window.USER_DATA.cpf,
-                      deviceId: window.USER_DATA.deviceId // <-- ENVIANDO FINGERPRINT PRO BACKEND
+                      deviceId: window.USER_DATA.deviceId
                     })
                   }
                 );
 
                 const data = await res.json();
-                window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "RESULT", data }));
+                
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: "RESULT", data }));
+                } else {
+                  alert("Pagamento Processado! Status: " + (data.mercadoPago?.status || "Verifique os logs"));
+                }
               } catch (err) {
-                window.ReactNativeWebView?.postMessage(JSON.stringify({ type: "ERROR", message: err.message }));
+                if (window.ReactNativeWebView) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type: "ERROR", message: err.message }));
+                } else {
+                  alert("Erro no envio: " + err.message);
+                }
               }
             }
           }
         });
       } catch (e) {
-        alert(e.message);
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: "ERROR", message: e.message }));
+        } else {
+          alert(e.message);
+        }
       }
     });
   </script>
@@ -99,22 +138,23 @@ export default function PaymentScreen() {
   const [deviceId, setDeviceId] = useState("");
   const [dadosConfirmados, setDadosConfirmados] = useState(false);
   const [visitorId] = useState(`VISITOR-${Date.now()}`);
+  const webViewRef = useRef(null);
 
-  // Captura o ID único de hardware assim que o componente carrega
+  // Coleta o ID de hardware nativo do aparelho (Android/iOS)
   useEffect(() => {
     async function fetchDeviceFingerprint() {
       try {
         if (Platform.OS === 'android') {
           const id = await Application.getAndroidId();
-          setDeviceId(id);
+          setDeviceId(id || `android-fallback-${Date.now()}`);
         } else if (Platform.OS === 'ios') {
           const id = await Application.getIosIdForVendorAsync();
-          setDeviceId(id);
+          setDeviceId(id || `ios-fallback-${Date.now()}`);
         } else {
           setDeviceId(`web-${Date.now()}`);
         }
       } catch (err) {
-        setDeviceId(`fallback-${Date.now()}`);
+        setDeviceId(`error-fallback-${Date.now()}`);
       }
     }
     fetchDeviceFingerprint();
@@ -136,10 +176,22 @@ export default function PaymentScreen() {
     setDadosConfirmados(true);
   };
 
+  const onWebViewMessage = (event) => {
+    try {
+      const response = JSON.parse(event.nativeEvent.data);
+      if (response.type === "RESULT") {
+        alert(`Pagamento Processado! Status: ${response.data.mercadoPago?.status}`);
+      } else if (response.type === "ERROR") {
+        alert(`Erro no pagamento: ${response.message}`);
+      }
+    } catch (e) {
+      console.log("Erro ao decodificar mensagem da WebView:", e);
+    }
+  };
+
   if (!dadosConfirmados) {
     return (
       <ScrollView contentContainerStyle={styles.containerForm}>
-        {/* CORRIGIDO: Exibição coerente do valor real */}
         <Text style={styles.titleForm}>Checkout Premium - R$ 400,00</Text>
         <Text style={styles.subtitleForm}>Insira os dados do titular do cartão para evitar bloqueios:</Text>
         
@@ -176,28 +228,48 @@ export default function PaymentScreen() {
     );
   }
 
+  const htmlContent = getBrickHtml(inputEmail.trim(), visitorId, inputName.trim(), inputCpf.trim(), deviceId);
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Finalize o seu Pagamento</Text>
       <Text style={{ textAlign: "center", color: "#666", marginBottom: 10 }}>Comprador: {inputName}</Text>
 
-      {/* CORRIGIDO: Agora passa também o deviceId coletado nativamente */}
-      <iframe
-        srcDoc={getBrickHtml(inputEmail.trim(), visitorId, inputName.trim(), inputCpf.trim(), deviceId)}
-        style={{ width: "100%", height: "650px", border: "none" }}
-        title="Mercado Pago"
-      />
+      {Platform.OS === "web" ? (
+        <iframe
+          srcDoc={htmlContent}
+          style={{ width: "100%", height: "650px", border: "none" }}
+          title="Mercado Pago Web"
+        />
+      ) : (
+        <WebView
+          ref={webViewRef}
+          originWhitelist={["*"]}
+          source={{ 
+            html: htmlContent,
+            baseUrl: "https://www.mercadopago.com.br" // <-- Resolve o sumiço do Brick no Mobile
+          }}
+          style={styles.webview}
+          onMessage={onWebViewMessage}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          startInLoadingState={true}
+          scalesPageToFit={true}
+          mixedContentMode="always"
+        />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff", padding: 20 },
+  container: { flex: 1, backgroundColor: "#fff", padding: 10 },
   containerForm: { flexGrow: 1, backgroundColor: "#fff", justifyContent: "center", alignItems: "center", padding: 20 },
   titleForm: { fontSize: 22, fontWeight: "bold", marginBottom: 10 },
   subtitleForm: { fontSize: 14, color: "#555", textAlign: "center", marginBottom: 20 },
   input: { width: "100%", maxWidth: 400, height: 50, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 15, marginBottom: 15, fontSize: 16 },
   button: { backgroundColor: "#007bff", width: "100%", maxWidth: 400, height: 50, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 10 },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  title: { textAlign: "center", fontSize: 20, fontWeight: "600", marginTop: 20 }
+  title: { textAlign: "center", fontSize: 20, fontWeight: "600", marginTop: 20, marginBottom: 10 },
+  webview: { flex: 1, width: "100%", height: 650 }
 });

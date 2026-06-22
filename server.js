@@ -48,12 +48,12 @@ const PaymentSchema = new mongoose.Schema({
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROTA DE PAGAMENTO COM DEVICE FINGERPRINT ================= */
+/* ================= ROTA DE PAGAMENTO COM MOCK ACTIVADO ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
     console.log("=================================");
-    console.log("🔥 PAYMENT REQUEST RECEIVED (TOTALMENTE BLINDADO)");
+    console.log("🔥 PAYMENT REQUEST RECEIVED (MODO MOCK ACTIVADO)");
     console.log(JSON.stringify(req.body, null, 2));
     
     const {
@@ -65,10 +65,9 @@ app.post("/card-payment", async (req, res) => {
       cpf,
       transaction_amount,
       installments,
-      deviceId // <-- Recebido do Front-end (Expo)
+      deviceId
     } = req.body;
 
-    // Validação estrita inicial
     if (!token || !payment_method_id || !email) {
       console.log("⚠️ REQUISIÇÃO REJEITADA: Faltam campos cruciais.");
       return res.status(400).json({ 
@@ -77,49 +76,15 @@ app.post("/card-payment", async (req, res) => {
       });
     }
 
-    // Captura do IP real do comprador (Essencial para o Score Antifraude)
     const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-
-    // Tratamento de Nome e Sobrenome para evitar falha de checkout
     const firstName = name ? name.split(" ")[0] : "Cliente";
     const lastName = name && name.split(" ").length > 1 ? name.split(" ").slice(1).join(" ") : "Silva";
 
-    // Montagem do objeto estruturado com as diretrizes do antifraude do MP
-    const paymentData = {
-      transaction_amount: Number(transaction_amount || 400),
-      token,
-      description: "Inscrição Checkout Premium",
-      installments: Number(installments || 1),
-      payment_method_id,
-      payer: {
-        email: email?.trim(),
-        first_name: firstName,
-        last_name: lastName,
-        identification: {
-          type: "CPF",
-          number: cpf ? cpf.replace(/\D/g, "") : "00000000000"
-        }
-      },
-      additional_info: {
-        ip_address: clientIp,
-        items: [
-          {
-            id: "premium-access-01",
-            title: "Acesso Premium Procurojob",
-            description: "Upgrade de conta na plataforma profissional para designers",
-            category_id: "services",
-            quantity: 1,
-            unit_price: Number(transaction_amount || 400)
-          }
-        ]
-      }
-    };
-
     console.log("=================================");
-    console.log("X-Meli-Session-Id injetado:", deviceId || "Não enviado");
-    console.log("📤 ENVIANDO AO MP COM COMPROVAÇÃO DE DISPOSITIVO...");
+    console.log("X-Meli-Session-Id recebido:", deviceId || "Não enviado");
+    console.log("📤 [MODO MOCK] SIMULANDO APROVAÇÃO...");
     
-    // CORREÇÃO: Passando explicitamente o Authorization para resolver o erro "authorization value not present"
+    /* === CHAMADA REAL COMENTADA TEMPORARIAMENTE ===
     const result = await paymentClient.create({ 
       body: paymentData,
       requestOptions: {
@@ -129,15 +94,23 @@ app.post("/card-payment", async (req, res) => {
         }
       }
     });
+    ================================================ */
+
+    // OBJETO MOCK: Força o estado de aprovado ignorando o motor de risco do MP
+    const result = {
+      id: "MOCK-TRANS-" + Date.now(),
+      status: "approved", 
+      status_detail: "accredited"
+    };
 
     console.log("=================================");
-    console.log(`✅ RESPOSTA DO MERCADO PAGO: [${result.status}]`);
+    console.log(`✅ RESPOSTA SIMULADA (MOCK): [${result.status}]`);
     console.log(`🔍 DETALHE DO STATUS: [${result.status_detail}]`);
 
-    // Armazenamento do histórico da transação no banco
+    // Armazenamento do histórico simulado no MongoDB
     const saved = await PaymentModel.create({
       paymentId: String(result.id),
-      name: name || "Pagamento",
+      name: name || "Pagamento Mock",
       price: Number(transaction_amount || 400),
       status: result.status,
       email,
@@ -164,16 +137,11 @@ app.post("/card-payment", async (req, res) => {
 
   } catch (err) {
     console.log("=================================");
-    console.log("💥 ERRO PROCESSAMENTO CARTÃO:", err.message);
-    
-    if (err.response?.data) {
-      console.log("MP DETALHES INTERNOS:", JSON.stringify(err.response.data, null, 2));
-    }
+    console.log("💥 ERRO NO PROCESSAMENTO:", err.message);
     
     return res.status(500).json({ 
       success: false, 
-      error: err.message,
-      details: err.response?.data || null
+      error: err.message
     });
   }
 });
@@ -190,5 +158,5 @@ io.on("connection", (socket) => {
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Backend rodando perfeitamente na porta ${PORT}`);
+  console.log(`🚀 Backend com Mock rodando na porta ${PORT}`);
 });
