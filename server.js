@@ -48,12 +48,12 @@ const PaymentSchema = new mongoose.Schema({
 
 const PaymentModel = mongoose.model("Payment", PaymentSchema);
 
-/* ================= ROTA CRÍTICA DE PAGAMENTO COMPLETA ================= */
+/* ================= ROTA DE PAGAMENTO COM DEVICE FINGERPRINT ================= */
 
 app.post("/card-payment", async (req, res) => {
   try {
     console.log("=================================");
-    console.log("🔥 PAYMENT REQUEST RECIEVED (BLINDADO)");
+    console.log("🔥 PAYMENT REQUEST RECEIVED (TOTALMENTE BLINDADO)");
     console.log(JSON.stringify(req.body, null, 2));
     
     const {
@@ -65,6 +65,7 @@ app.post("/card-payment", async (req, res) => {
       cpf,
       transaction_amount,
       installments,
+      deviceId // <-- Recebido do Front-end (Expo)
     } = req.body;
 
     // Validação estrita inicial
@@ -76,16 +77,16 @@ app.post("/card-payment", async (req, res) => {
       });
     }
 
-    // 1. CAPTURA DO IP REAL DO COMPRADOR (Essencial para o Score Antifraude)
+    // Captura do IP real do comprador (Essencial para o Score Antifraude)
     const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
 
     // Tratamento de Nome e Sobrenome para evitar falha de checkout
     const firstName = name ? name.split(" ")[0] : "Cliente";
     const lastName = name && name.split(" ").length > 1 ? name.split(" ").slice(1).join(" ") : "Silva";
 
-    // 2. MONTAGEM DO OBJETO COMPLETO SEGUINDO A DOCUMENTAÇÃO MP
+    // Montagem do objeto estruturado com as diretrizes do antifraude do MP
     const paymentData = {
-      transaction_amount: Number(transaction_amount || 400),
+      transaction_amount: Number(transaction_amount || 10),
       token,
       description: "Inscrição Checkout Premium",
       installments: Number(installments || 1),
@@ -99,7 +100,6 @@ app.post("/card-payment", async (req, res) => {
           number: cpf ? cpf.replace(/\D/g, "") : "00000000000"
         }
       },
-      // 3. BLINDAGEM ANTIFRAUDE: Detalhamento do carrinho de compras e IP
       additional_info: {
         ip_address: clientIp,
         items: [
@@ -116,9 +116,18 @@ app.post("/card-payment", async (req, res) => {
     };
 
     console.log("=================================");
-    console.log("📤 ENVIANDO AO MP COM DADOS ANTIFRAUDE ROBUSTOS...");
+    console.log("X-Meli-Session-Id injetado:", deviceId || "Não enviado");
+    console.log("📤 ENVIANDO AO MP COM COMPROVAÇÃO DE DISPOSITIVO...");
     
-    const result = await paymentClient.create({ body: paymentData });
+    // Enviando o pagamento anexando o cabeçalho X-Meli-Session-Id com o ID do dispositivo
+    const result = await paymentClient.create({ 
+      body: paymentData,
+      requestOptions: {
+        headers: {
+          "X-Meli-Session-Id": deviceId || `session-fallback-${Date.now()}`
+        }
+      }
+    });
 
     console.log("=================================");
     console.log(`✅ RESPOSTA DO MERCADO PAGO: [${result.status}]`);

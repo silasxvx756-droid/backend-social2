@@ -1,8 +1,9 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform } from "react-native";
+import * as Application from 'expo-application';
 
-// FUNÇÃO DO HTML: Injeta os dados reais coletados para validação antifraude
-const getBrickHtml = (email, userId, name, cpf) => `
+// FUNÇÃO DO HTML: Injeta os dados reais coletados para validação antifraude + deviceId
+const getBrickHtml = (email, userId, name, cpf, deviceId) => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -13,7 +14,8 @@ const getBrickHtml = (email, userId, name, cpf) => `
       email: ${JSON.stringify(email)},
       userId: ${JSON.stringify(userId)},
       name: ${JSON.stringify(name)},
-      cpf: ${JSON.stringify(cpf)}
+      cpf: ${JSON.stringify(cpf)},
+      deviceId: ${JSON.stringify(deviceId)}
     };
   </script>
 </head>
@@ -28,17 +30,14 @@ const getBrickHtml = (email, userId, name, cpf) => `
 
         await bricksBuilder.create("payment", "brick_container", {
           initialization: {
-            // VALOR ATUALIZADO PARA 400
-            amount: 400,
+            amount: 400, // VALOR PADRONIZADO PARA R$ 400
           },
           customization: {
             paymentMethods: {
               creditCard: "all",
               debitCard: "all",
               pix: "all",
-              // RETIRA O PARCELAMENTO: Força o máximo de parcelas a ser 1
-              maxInstallments: 1,
-              // RETIRA CAIXA TEM: Exclui o método de pagamento específico da Caixa
+              maxInstallments: 1, // Força pagamento à vista
               excludes: {
                 paymentMethods: ["debit_card_caixa"]
               }
@@ -65,13 +64,13 @@ const getBrickHtml = (email, userId, name, cpf) => `
                     body: JSON.stringify({
                       token: token,
                       payment_method_id: payment_method_id,
-                      // VALOR ATUALIZADO NO ENVIO DO BACKEND PARA 400
-                      transaction_amount: 400,
+                      transaction_amount: 400, // VALOR ENVIADO AO BACKEND CONDIZENTE
                       installments: Number(installments),
                       email: window.USER_DATA.email, 
                       userId: window.USER_DATA.userId,
                       name: window.USER_DATA.name,
-                      cpf: window.USER_DATA.cpf
+                      cpf: window.USER_DATA.cpf,
+                      deviceId: window.USER_DATA.deviceId // <-- ENVIANDO FINGERPRINT PRO BACKEND
                     })
                   }
                 );
@@ -97,8 +96,29 @@ export default function PaymentScreen() {
   const [inputEmail, setInputEmail] = useState("");
   const [inputName, setInputName] = useState("");
   const [inputCpf, setInputCpf] = useState("");
+  const [deviceId, setDeviceId] = useState("");
   const [dadosConfirmados, setDadosConfirmados] = useState(false);
   const [visitorId] = useState(`VISITOR-${Date.now()}`);
+
+  // Captura o ID único de hardware assim que o componente carrega
+  useEffect(() => {
+    async function fetchDeviceFingerprint() {
+      try {
+        if (Platform.OS === 'android') {
+          const id = await Application.getAndroidId();
+          setDeviceId(id);
+        } else if (Platform.OS === 'ios') {
+          const id = await Application.getIosIdForVendorAsync();
+          setDeviceId(id);
+        } else {
+          setDeviceId(`web-${Date.now()}`);
+        }
+      } catch (err) {
+        setDeviceId(`fallback-${Date.now()}`);
+      }
+    }
+    fetchDeviceFingerprint();
+  }, []);
 
   const iniciarCheckout = () => {
     if (!inputEmail.includes("@") || !inputEmail.includes(".")) {
@@ -119,8 +139,8 @@ export default function PaymentScreen() {
   if (!dadosConfirmados) {
     return (
       <ScrollView contentContainerStyle={styles.containerForm}>
-        {/* TEXTO ATUALIZADO PARA EXIBIR R$ 400 */}
-        <Text style={styles.titleForm}>Checkout Premium - R$ 40</Text>
+        {/* CORRIGIDO: Exibição coerente do valor real */}
+        <Text style={styles.titleForm}>Checkout Premium - R$ 400,00</Text>
         <Text style={styles.subtitleForm}>Insira os dados do titular do cartão para evitar bloqueios:</Text>
         
         <TextInput
@@ -161,8 +181,9 @@ export default function PaymentScreen() {
       <Text style={styles.title}>Finalize o seu Pagamento</Text>
       <Text style={{ textAlign: "center", color: "#666", marginBottom: 10 }}>Comprador: {inputName}</Text>
 
+      {/* CORRIGIDO: Agora passa também o deviceId coletado nativamente */}
       <iframe
-        srcDoc={getBrickHtml(inputEmail.trim(), visitorId, inputName.trim(), inputCpf.trim())}
+        srcDoc={getBrickHtml(inputEmail.trim(), visitorId, inputName.trim(), inputCpf.trim(), deviceId)}
         style={{ width: "100%", height: "650px", border: "none" }}
         title="Mercado Pago"
       />
