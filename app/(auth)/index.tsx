@@ -8,17 +8,15 @@ export default function PaymentScreen() {
   const [inputName, setInputName] = useState("");
   const [inputCpf, setInputCpf] = useState("");
   
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardExpiry, setCardExpiry] = useState(""); 
-  const [cardCvc, setCardCvc] = useState("");
-  
   const [deviceId, setDeviceId] = useState("");
   const [loading, setLoading] = useState(false);
   const [pagamentoSucesso, setPagamentoSucesso] = useState(false);
   
-  // Estados para gerenciar a WebView do Plisio por cima do app
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
+
+  // Exemplo de estado de lista caso seu app use (Onde dava o erro de .map)
+  const [historicoTransacoes, setHistoricoTransacoes] = useState([]); 
 
   useEffect(() => {
     async function fetchDeviceFingerprint() {
@@ -39,24 +37,16 @@ export default function PaymentScreen() {
     fetchDeviceFingerprint();
   }, []);
 
-  const processarPagamentoPlisio = async () => {
-    if (!inputEmail.includes("@") || !inputEmail.includes(".")) {
-      alert("Por favor, insira um e-mail válido.");
-      return;
-    }
-    if (cardNumber.length < 13 || cardCvc.length < 3 || !cardExpiry.includes("/")) {
-      alert("Por favor, preencha todos os campos do cartão corretamente.");
-      return;
-    }
-    if (inputCpf.replace(/\D/g, "").length !== 11) {
-      alert("Por favor, insira um CPF válido.");
+  const processarPagamentoNowPayments = async () => {
+    if (!inputName.trim() || !inputEmail.includes("@") || inputCpf.replace(/\D/g, "").length !== 11) {
+      alert("Por favor, preencha todos os campos corretamente.");
       return;
     }
 
     setLoading(true);
 
     try {
-      const res = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
+      const res = await fetch("https://backend-social22.onrender.com/nowpayments.io", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -65,39 +55,22 @@ export default function PaymentScreen() {
           email: inputEmail.trim(),
           name: inputName.trim(),
           cpf: inputCpf.replace(/\D/g, ""),
-          card: {
-            number: cardNumber.replace(/\s/g, ""),
-            expiry: cardExpiry.trim(),
-            cvc: cardCvc.trim()
-          },
           deviceId: deviceId
         })
       });
 
       const data = await res.json();
 
-      if (data?.status === "redirect" && data?.redirectUrl) {
-        // Abre a tela segura do Plisio em um modal direto na tela do usuário
+      if (data?.redirectUrl) {
         setCheckoutUrl(data.redirectUrl);
         setModalVisible(true);
       } else {
         alert(data?.message || "Erro ao processar checkout.");
       }
     } catch (err) {
-      alert(`Erro na comunicação com o servidor: ${err.message}`);
+      alert(`Erro de conexão: ${err.message}`);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const lidarComMudancaDeStatus = (navState) => {
-    if (navState.url.includes("/sucesso") || navState.url.includes("success")) {
-      setModalVisible(false);
-      setPagamentoSucesso(true);
-    }
-    if (navState.url.includes("/cancelado")) {
-      setModalVisible(false);
-      alert("O pagamento foi cancelado.");
     }
   };
 
@@ -107,7 +80,6 @@ export default function PaymentScreen() {
         <View style={styles.cardSucesso}>
           <Text style={styles.iconSucesso}>🎉</Text>
           <Text style={styles.titleSucesso}>¡Pagamento Aprovado!</Text>
-          <Text style={styles.subtitleSucesso}>Seu plano Premium já está ativo via Plisio.</Text>
         </View>
       </View>
     );
@@ -117,41 +89,32 @@ export default function PaymentScreen() {
     <ScrollView contentContainerStyle={styles.containerForm}>
       <Text style={styles.titleForm}>Checkout Premium - R$ 30,00</Text>
       
-      <TextInput style={styles.input} placeholder="Nome Completo" value={inputName} onChangeText={setInputName} editable={!loading} />
-      <TextInput style={styles.input} placeholder="E-mail" value={inputEmail} onChangeText={setInputEmail} keyboardType="email-address" autoCapitalize="none" editable={!loading} />
-      <TextInput style={styles.input} placeholder="CPF (apenas números)" value={inputCpf} onChangeText={setInputCpf} keyboardType="numeric" maxLength={11} editable={!loading} />
+      <TextInput style={styles.input} placeholder="Nome" value={inputName} onChangeText={setInputName} editable={!loading} />
+      <TextInput style={styles.input} placeholder="E-mail" value={inputEmail} onChangeText={setInputEmail} keyboardType="email-address" editable={!loading} />
+      <TextInput style={styles.input} placeholder="CPF" value={inputCpf} onChangeText={setInputCpf} keyboardType="numeric" maxLength={11} editable={!loading} />
 
-      <View style={{ width: '100%', maxWidth: 400, borderTopWidth: 1, borderColor: '#eee', marginTop: 10, paddingTop: 15 }}>
-        <Text style={{ fontWeight: 'bold', marginBottom: 10, color: '#333' }}>Dados do Cartão de Crédito</Text>
-      </View>
+      {/* 
+         PROTEÇÃO ANTIO-ERRO (Caso decida mapear arrays na tela):
+         O uso do (historicoTransacoes || []) garante que se a lista estiver indefinida, 
+         o app usará um array vazio temporário e não quebrará com erro de ".map"
+      */}
+      {historicoTransacoes && (historicoTransacoes || []).map((item, index) => (
+        <Text key={index}>{item?.status}</Text>
+      ))}
 
-      <TextInput style={styles.input} placeholder="Número do Cartão" value={cardNumber} onChangeText={setCardNumber} keyboardType="numeric" editable={!loading} />
-
-      <View style={styles.row}>
-        <TextInput style={[styles.input, { flex: 1, marginRight: 10 }]} placeholder="Validade (MM/AA)" value={cardExpiry} onChangeText={setCardExpiry} maxLength={5} editable={!loading} />
-        <TextInput style={[styles.input, { flex: 1 }]} placeholder="CVC / CVV" value={cardCvc} onChangeText={setCardCvc} keyboardType="numeric" maxLength={4} editable={!loading} />
-      </View>
-
-      <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={processarPagamentoPlisio} disabled={loading}>
+      <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={processarPagamentoNowPayments} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pagar Agora</Text>}
       </TouchableOpacity>
 
-      {/* MODAL DE CHECKOUT EMBUTIDO */}
-      <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)}>
+      <Modal visible={modalVisible} animationType="slide">
         <View style={{ flex: 1, backgroundColor: '#fff' }}>
           <View style={styles.headerModal}>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={styles.closeText}>✕ Voltar para o App</Text>
-            </TouchableOpacity>
-            <Text style={{ fontWeight: 'bold' }}>Pagamento Seguro via Plisio</Text>
+            <TouchableOpacity onPress={() => setModalVisible(false)}><Text style={styles.closeText}>✕ Voltar</Text></TouchableOpacity>
+            <Text style={{ fontWeight: 'bold' }}>Pagamento NowPayments</Text>
+            <View style={{ width: 40 }} />
           </View>
           {checkoutUrl && (
-            <WebView 
-              source={{ uri: checkoutUrl }} 
-              onNavigationStateChange={lidarComMudancaDeStatus}
-              startInLoadingState={true}
-              renderLoading={() => <ActivityIndicator size="large" color="#28a745" style={{ position: 'absolute', top: '50%', left: '45%' }} />}
-            />
+            <WebView source={{ uri: checkoutUrl }} startInLoadingState={true} />
           )}
         </View>
       </Modal>
@@ -162,16 +125,14 @@ export default function PaymentScreen() {
 const styles = StyleSheet.create({
   containerForm: { flexGrow: 1, backgroundColor: "#fff", justifyContent: "center", alignItems: "center", padding: 20 },
   titleForm: { fontSize: 22, fontWeight: "bold", marginBottom: 20 },
-  input: { width: "100%", maxWidth: 400, height: 50, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 15, marginBottom: 15, fontSize: 16 },
-  row: { flexDirection: "row", width: "100%", maxWidth: 400 },
-  button: { backgroundColor: "#28a745", width: "100%", maxWidth: 400, height: 50, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 10 },
+  input: { width: "100%", maxWidth: 400, height: 50, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 15, marginBottom: 15 },
+  button: { backgroundColor: "#28a745", width: "100%", maxWidth: 400, height: 50, borderRadius: 8, justifyContent: "center", alignItems: "center" },
   buttonDisabled: { backgroundColor: "#6c757d" },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  headerModal: { height: 60, backgroundColor: '#f8f9fa', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, borderBottomWidth: 1, borderColor: '#eee', paddingTop: Platform.OS === 'ios' ? 20 : 0 },
+  headerModal: { height: 60, backgroundColor: '#f8f9fa', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingTop: Platform.OS === 'ios' ? 20 : 0 },
   closeText: { color: '#dc3545', fontWeight: 'bold' },
   containerSucesso: { flex: 1, backgroundColor: "#f4f7f6", justifyContent: "center", alignItems: "center" },
   cardSucesso: { backgroundColor: "#fff", padding: 30, borderRadius: 16, alignItems: "center" },
   iconSucesso: { fontSize: 60, marginBottom: 15 },
-  titleSucesso: { fontSize: 24, fontWeight: "bold", color: "#2e7d32" },
-  subtitleSucesso: { fontSize: 16, color: "#333", marginTop: 10 }
+  titleSucesso: { fontSize: 24, fontWeight: "bold", color: "#2e7d32" }
 });
