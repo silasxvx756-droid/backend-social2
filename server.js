@@ -1,16 +1,17 @@
 import express from 'express';
 import axios from 'axios';
+import cors from 'cors';
 
 const app = express();
 
-// Middleware para processar JSON
+// Habilita CORS para permitir que seu App mobile conecte ao servidor
+app.use(cors());
 app.use(express.json());
 
-// CONFIGURAÇÃO: Certifique-se de adicionar a chave no painel do Render
-// em: Settings -> Environment -> Add Environment Variable
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
 
 app.post('/process-nowpayments-card', async (req, res) => {
+    console.log("Recebendo pedido de pagamento...");
     const { name, email, cpf } = req.body;
 
     if (!email || !name) {
@@ -24,30 +25,18 @@ app.post('/process-nowpayments-card', async (req, res) => {
             order_id: `pedido_${Date.now()}`,
             order_description: `Assinatura Premium - ${name}`,
             case_id: cpf,
-            success_url: 'https://seusite.com/sucesso',
-            cancel_url: 'https://seusite.com/cancelado'
+            success_url: 'https://google.com', // Ajuste conforme necessário
+            cancel_url: 'https://google.com'
         }, {
-            headers: { 
-                'x-api-key': NOWPAYMENTS_API_KEY,
-                'Content-Type': 'application/json' 
-            }
+            headers: { 'x-api-key': NOWPAYMENTS_API_KEY }
         });
 
-        return res.json({
-            status: 'success',
-            redirectUrl: response.data.invoice_url
-        });
-
+        return res.json({ status: 'success', redirectUrl: response.data.invoice_url });
     } catch (error) {
-        console.error('Erro na integração:', error.response?.data || error.message);
-        res.status(500).json({ 
-            message: 'Erro ao processar o checkout no servidor.',
-            details: error.response?.data?.message || error.message 
-        });
+        console.error('Erro API NOWPayments:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Erro no servidor' });
     }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Servidor de pagamento rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));

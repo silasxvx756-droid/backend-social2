@@ -1,5 +1,16 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Alert } from "react-native";
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  TextInput, 
+  TouchableOpacity, 
+  ScrollView, 
+  ActivityIndicator, 
+  Modal, 
+  Alert,
+  Platform
+} from "react-native";
 import { WebView } from 'react-native-webview';
 
 export default function PaymentScreen() {
@@ -8,46 +19,44 @@ export default function PaymentScreen() {
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Script para esconder elementos da página do gateway
-  // ATENÇÃO: Substitua os seletores abaixo pelas classes reais da página do NOWPayments
-  const hideElementsScript = `
+  // Script para limpar a interface da página de checkout (ajuste os seletores conforme necessário)
+  const injectedCSS = `
     (function() {
       const style = document.createElement('style');
       style.innerHTML = \`
-        .header, .footer, .price-display, .company-logo { 
-          display: none !important; 
-        }
+        header, footer, .logo, .navbar { display: none !important; }
       \`;
       document.head.appendChild(style);
     })();
-    true;
   `;
 
   const processarPagamento = async () => {
-    if (!form.email.includes("@") || form.name.length < 3) {
-      Alert.alert("Erro", "Preencha seus dados corretamente.");
+    // Validação básica
+    if (!form.name || !form.email.includes("@") || !form.cpf) {
+      Alert.alert("Atenção", "Por favor, preencha todos os campos corretamente.");
       return;
     }
 
     setLoading(true);
+    
     try {
-      // Chama o backend para criar a fatura oficial
-      const res = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
+      const response = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form) 
+        body: JSON.stringify(form)
       });
 
-      const data = await res.json();
+      const data = await response.json();
 
-      if (data.redirectUrl) {
+      if (response.ok && data.redirectUrl) {
         setCheckoutUrl(data.redirectUrl);
         setModalVisible(true);
       } else {
-        Alert.alert("Erro", data.message || "Falha ao iniciar pagamento.");
+        Alert.alert("Erro", data.message || "Não foi possível iniciar o pagamento.");
       }
     } catch (err) {
-      Alert.alert("Erro", "Falha na conexão com o servidor.");
+      console.error(err);
+      Alert.alert("Erro", "Falha na conexão com o servidor. Tente novamente.");
     } finally {
       setLoading(false);
     }
@@ -57,29 +66,65 @@ export default function PaymentScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Checkout Premium</Text>
 
-      <TextInput style={styles.input} placeholder="Nome Completo" onChangeText={(v) => setForm({...form, name: v})} />
-      <TextInput style={styles.input} placeholder="E-mail" keyboardType="email-address" onChangeText={(v) => setForm({...form, email: v})} />
-      <TextInput style={styles.input} placeholder="CPF" keyboardType="numeric" onChangeText={(v) => setForm({...form, cpf: v})} />
-      
-      <TouchableOpacity style={styles.button} onPress={processarPagamento} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Prosseguir para Pagamento</Text>}
+      <TextInput 
+        style={styles.input} 
+        placeholder="Nome Completo" 
+        value={form.name}
+        onChangeText={(v) => setForm({...form, name: v})} 
+      />
+      <TextInput 
+        style={styles.input} 
+        placeholder="E-mail" 
+        keyboardType="email-address" 
+        autoCapitalize="none"
+        value={form.email}
+        onChangeText={(v) => setForm({...form, email: v})} 
+      />
+      <TextInput 
+        style={styles.input} 
+        placeholder="CPF (apenas números)" 
+        keyboardType="numeric" 
+        maxLength={11}
+        value={form.cpf}
+        onChangeText={(v) => setForm({...form, cpf: v})} 
+      />
+
+      <TouchableOpacity 
+        style={[styles.button, loading && { opacity: 0.7 }]} 
+        onPress={processarPagamento} 
+        disabled={loading}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Pagar R$ 30,00</Text>
+        )}
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} animationType="slide">
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={styles.modalHeader}>
+      {/* Modal contendo a WebView do Checkout */}
+      <Modal 
+        visible={modalVisible} 
+        animationType="slide"
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={styles.modalContainer}>
+          <View style={styles.headerModal}>
+            <Text style={styles.headerTitle}>Pagamento Seguro</Text>
             <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={styles.closeBtn}>✕ Voltar</Text>
+              <Text style={styles.closeButton}>Fechar</Text>
             </TouchableOpacity>
           </View>
           
-          {checkoutUrl && (
+          {checkoutUrl ? (
             <WebView 
               source={{ uri: checkoutUrl }}
               javaScriptEnabled={true}
-              injectedJavaScript={hideElementsScript}
+              injectedJavaScript={injectedCSS}
               startInLoadingState={true}
+              renderLoading={() => <ActivityIndicator size="large" style={{ marginTop: 50 }} />}
             />
+          ) : (
+            <ActivityIndicator style={{ flex: 1 }} />
           )}
         </View>
       </Modal>
@@ -88,11 +133,55 @@ export default function PaymentScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingTop: 50 },
-  title: { fontSize: 22, fontWeight: "bold", marginBottom: 20, textAlign: 'center' },
-  input: { height: 50, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 15, marginBottom: 15 },
-  button: { backgroundColor: "#28a745", height: 50, borderRadius: 8, justifyContent: "center", alignItems: "center" },
-  buttonText: { color: "#fff", fontWeight: "bold" },
-  modalHeader: { height: 50, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, borderBottomWidth: 1, borderColor: '#eee' },
-  closeBtn: { fontSize: 16, color: '#dc3545' }
+  container: { 
+    flexGrow: 1, 
+    padding: 20, 
+    justifyContent: 'center', 
+    backgroundColor: '#fff' 
+  },
+  title: { 
+    fontSize: 24, 
+    fontWeight: "bold", 
+    marginBottom: 30, 
+    textAlign: 'center',
+    color: '#333'
+  },
+  input: { 
+    height: 55, 
+    borderWidth: 1, 
+    borderColor: "#ddd", 
+    borderRadius: 10, 
+    paddingHorizontal: 15, 
+    marginBottom: 15,
+    fontSize: 16
+  },
+  button: { 
+    backgroundColor: "#28a745", 
+    height: 55, 
+    borderRadius: 10, 
+    justifyContent: "center", 
+    alignItems: "center",
+    marginTop: 10
+  },
+  buttonText: { 
+    color: "#fff", 
+    fontSize: 18, 
+    fontWeight: "bold" 
+  },
+  modalContainer: { 
+    flex: 1, 
+    backgroundColor: '#fff',
+    paddingTop: Platform.OS === 'ios' ? 40 : 0 
+  },
+  headerModal: {
+    height: 60,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderColor: '#eee'
+  },
+  headerTitle: { fontSize: 16, fontWeight: 'bold' },
+  closeButton: { color: '#dc3545', fontWeight: 'bold', fontSize: 16 }
 });
