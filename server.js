@@ -1,52 +1,49 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import fetch from 'node-fetch'; // Caso dê erro de pacote, lembre-se que o Node 24+ já tem o globalThis.fetch nativo!
 
 const app = express();
 
-// Configurações Globais de Middleware
 app.use(cors());
 app.use(express.json());
 
-// Resgata a API Key configurada no painel do Render
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
 
-// Endpoint oficial de produção para parceiros Fiat da NOWPayments
-const NOWPAYMENTS_FIAT_URL = "https://api.nowpayments.io/v1/fiat-payment";
+// URL oficial atualizada para conversão transparente de Fiat para Cripto via API
+const NOWPAYMENTS_FIAT_URL = "https://api.nowpayments.io/v1/fiat-payment/convert";
 
-// Rota de Teste de Conexão
 app.get('/', (req, res) => {
-  res.send('🚀 Servidor Web Produção Ativo e Operando (ESM)!');
+  res.send('🚀 Servidor Web Produção Ativo e Operando (Checkout Transparente)!');
 });
 
 // ====================================================================
-// 💳 ROTA PRINCIPAL: RECEBE O CARTÃO DO FRONT-END E ENVIA PARA A API
+// 💳 ROTA TRANSPARENTE: RECEBE O CARTÃO E PROCESSA DIRETO NA API
 // ====================================================================
 app.post('/process-nowpayments-card', async (req, res) => {
   try {
     const { amount, currency, email, name, cpf, card, deviceId } = req.body;
 
-    console.log(`[NOWPayments] Nova tentativa de pagamento iniciada para o e-mail: ${email || 'Desconhecido'}`);
+    console.log(`[NOWPayments Direct] Iniciando checkout transparente para: ${email}`);
 
     if (!email || !card || !card.number || !card.cvc || !card.expiry) {
-      console.log(`[Aviso] Dados incompletos enviados pelo Front-end.`);
       return res.status(400).json({ 
         status: "failed", 
-        message: "Dados de cartão ou usuário incompletos no servidor." 
+        message: "Dados de cartão ou usuário incompletos." 
       });
     }
 
+    // Processa a validade vinda do formato MM/AA
     const expiryParts = card.expiry.split('/');
     if (expiryParts.length !== 2) {
-      return res.status(400).json({ status: "failed", message: "Formato de validade do cartão incorreto (use MM/AA)." });
+      return res.status(400).json({ status: "failed", message: "Formato de validade incorreto (MM/AA)." });
     }
     const expiryMonth = expiryParts[0].trim();
     const expiryYear = "20" + expiryParts[1].trim();
 
+    // Payload estruturado para a API de conversão fiat-to-crypto direta
     const payload = {
-      fiat_amount: amount || 10.00,
-      fiat_currency: currency || "BRL",
+      fiat_amount: amount || 30.00, // Lembrando do limite mínimo exigido pelos provedores fiat deles
+      fiat_currency: (currency || "BRL").toLowerCase(),
       crypto_currency: "usdttrc20",
       customer_email: email.trim(),
       customer_name: name ? name.trim() : "Cliente App",
@@ -57,13 +54,11 @@ app.post('/process-nowpayments-card', async (req, res) => {
         expiration_month: expiryMonth,
         expiration_year: expiryYear
       },
-      order_id: `NP-${Date.now()}`,
-      metadata: {
-        device_id: deviceId || "não-informado"
-      }
+      order_id: `NP-DIR-${Date.now()}`,
+      metadata: { device_id: deviceId || "não-informado" }
     };
 
-    console.log(`[NOWPayments] Enviando requisição criptografada para o gateway...`);
+    console.log(`[NOWPayments Direct] Enviando dados do cartão de forma segura...`);
 
     const response = await fetch(NOWPAYMENTS_FIAT_URL, {
       method: "POST",
@@ -76,27 +71,25 @@ app.post('/process-nowpayments-card', async (req, res) => {
 
     const data = await response.json();
 
+    // Valida o retorno de aprovação direta da transação
     if (data && (data.status === "approved" || data.status === "success" || data.success === true)) {
-      console.log(`[Sucesso] Cartão de ${email} APROVADO com sucesso pela rede.`);
+      console.log(`[Sucesso] Cartão de ${email} APROVADO!`);
       return res.json({ status: "approved", message: "Pagamento processado com sucesso!" });
     } else {
-      console.log(`[Recusado] Falha no processamento. Resposta da API:`, JSON.stringify(data));
+      console.log(`[Recusado Direct] Resposta da API:`, JSON.stringify(data));
       return res.status(400).json({ 
         status: "failed", 
-        message: data.message || "Cartão recusado. Verifique o saldo, os dados digitados ou o limite mínimo." 
+        message: data.message || "Cartão recusado. Verifique os dados, o saldo ou o valor mínimo." 
       });
     }
 
   } catch (error) {
-    console.error("[Erro Crítico no Servidor]:", error.message);
-    return res.status(500).json({ 
-      status: "error", 
-      message: "Erro interno no servidor ao tentar estabelecer contato com a Blockchain." 
-    });
+    console.error("[Erro Crítico Direct]:", error.message);
+    return res.status(500).json({ status: "error", message: "Erro interno ao processar o cartão." });
   }
 });
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor Web Produção ativo na porta ${PORT}`);
+  console.log(`🚀 Servidor ativo na porta ${PORT}`);
 });

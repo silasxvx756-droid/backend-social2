@@ -1,14 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, ActivityIndicator } from "react-native";
 import * as Application from 'expo-application';
 
 export default function PaymentScreen() {
-  // Dados do Comprador
   const [inputEmail, setInputEmail] = useState("");
   const [inputName, setInputName] = useState("");
   const [inputCpf, setInputCpf] = useState("");
   
-  // Dados do Cartão
   const [cardNumber, setCardNumber] = useState("");
   const [cardExpiry, setCardExpiry] = useState(""); 
   const [cardCvc, setCardCvc] = useState("");
@@ -57,7 +55,7 @@ export default function PaymentScreen() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: 10.00,
+          amount: 30.00, // Mantido em 30 para evitar erros de limite mínimo fiat-to-crypto
           currency: "BRL",
           email: inputEmail.trim(),
           name: inputName.trim(),
@@ -71,14 +69,12 @@ export default function PaymentScreen() {
         })
       });
 
-      // CORREÇÃO: Captura como texto primeiro para evitar o erro de Token '<' caso venha HTML
       const textoBruto = await res.text();
-      console.log("Resposta do Servidor:", textoBruto);
+      console.log("Resposta Bruta:", textoBruto);
 
       if (!res.ok) {
-        // Se o Render retornar erro HTML (404, 502), ele cai aqui sem travar o App
         if (textoBruto.includes("<!DOCTYPE") || textoBruto.includes("Cannot POST")) {
-          alert("Erro: O servidor não encontrou a rota /process-nowpayments-card. Verifique se o deploy do backend terminou.");
+          alert("Erro na rota do servidor. Verifique se o deploy completou.");
         } else {
           const erroData = JSON.parse(textoBruto);
           alert(erroData.message || "Erro no processamento do cartão.");
@@ -91,7 +87,7 @@ export default function PaymentScreen() {
       if (data?.status === "approved" || data?.status === "success") {
         setPagamentoSucesso(true);
       } else {
-        alert(data?.message || "Pagamento recusado.");
+        alert(data?.message || "Pagamento recusado. Verifique os dados ou saldo.");
       }
     } catch (err) {
       alert(`Erro na comunicação com o servidor: ${err.message}`);
@@ -114,7 +110,7 @@ export default function PaymentScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.containerForm}>
-      <Text style={styles.titleForm}>Checkout Premium - R$ 10,00</Text>
+      <Text style={styles.titleForm}>Checkout Premium - R$ 30,00</Text>
       
       <TextInput style={styles.input} placeholder="Nome Completo" value={inputName} onChangeText={setInputName} editable={!loading} />
       <TextInput style={styles.input} placeholder="E-mail" value={inputEmail} onChangeText={setInputEmail} keyboardType="email-address" autoCapitalize="none" editable={!loading} />
@@ -131,8 +127,8 @@ export default function PaymentScreen() {
         <TextInput style={[styles.input, { flex: 1 }]} placeholder="CVC / CVV" value={cardCvc} onChangeText={setCardCvc} keyboardType="numeric" maxLength={4} editable={!loading} />
       </View>
 
-      <TouchableOpacity style={styles.button} onPress={processarPagamentoNowPayments} disabled={loading}>
-        <Text style={styles.buttonText}>{loading ? "Processando Cartão..." : "Pagar Agora"}</Text>
+      <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={processarPagamentoNowPayments} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pagar Agora</Text>}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -144,6 +140,7 @@ const styles = StyleSheet.create({
   input: { width: "100%", maxWidth: 400, height: 50, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 15, marginBottom: 15, fontSize: 16 },
   row: { flexDirection: "row", width: "100%", maxWidth: 400 },
   button: { backgroundColor: "#28a745", width: "100%", maxWidth: 400, height: 50, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 10 },
+  buttonDisabled: { backgroundColor: "#6c757d" },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
   containerSucesso: { flex: 1, backgroundColor: "#f4f7f6", justifyContent: "center", alignItems: "center" },
   cardSucesso: { backgroundColor: "#fff", padding: 30, borderRadius: 16, alignItems: "center" },
