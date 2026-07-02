@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, ActivityIndicator, Modal } from "react-native";
-import { WebView } from 'react-native-webview';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, ActivityIndicator } from "react-native";
 import * as Application from 'expo-application';
 
 export default function PaymentScreen() {
@@ -15,10 +14,6 @@ export default function PaymentScreen() {
   const [deviceId, setDeviceId] = useState("");
   const [loading, setLoading] = useState(false);
   const [pagamentoSucesso, setPagamentoSucesso] = useState(false);
-  
-  // Estados para controlar o WebView embutido
-  const [checkoutUrl, setCheckoutUrl] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
     async function fetchDeviceFingerprint() {
@@ -29,6 +24,8 @@ export default function PaymentScreen() {
         } else if (Platform.OS === 'ios') {
           const id = await Application.getIosIdForVendorAsync();
           setDeviceId(id || `ios-${Date.now()}`);
+        } else {
+          setDeviceId(`web-${Date.now()}`);
         }
       } catch (err) {
         setDeviceId(`err-${Date.now()}`);
@@ -46,6 +43,10 @@ export default function PaymentScreen() {
       alert("Por favor, preencha todos os campos do cartão corretamente.");
       return;
     }
+    if (inputCpf.replace(/\D/g, "").length !== 11) {
+      alert("Por favor, insira um CPF válido.");
+      return;
+    }
 
     setLoading(true);
 
@@ -57,35 +58,42 @@ export default function PaymentScreen() {
           amount: 30.00,
           currency: "BRL",
           email: inputEmail.trim(),
-          name: inputName.trim()
+          name: inputName.trim(),
+          cpf: inputCpf.replace(/\D/g, ""),
+          card: {
+            number: cardNumber.replace(/\s/g, ""),
+            expiry: cardExpiry.trim(),
+            cvc: cardCvc.trim()
+          },
+          deviceId: deviceId
         })
       });
 
-      const data = await res.json();
+      const textoBruto = await res.text();
+      console.log("Resposta Bruta:", textoBruto);
 
-      if (data?.status === "redirect" && data?.redirectUrl) {
-        // Em vez de sair do app, salva a URL e abre o Modal com a WebView da NOWPayments
-        setCheckoutUrl(data.redirectUrl);
-        setModalVisible(true);
+      if (!res.ok) {
+        if (textoBruto.includes("<!DOCTYPE") || textoBruto.includes("Cannot POST")) {
+          alert("Erro na rota do servidor. Verifique se o deploy completou.");
+        } else {
+          const erroData = JSON.parse(textoBruto);
+          alert(erroData.message || "Erro no processamento do cartão.");
+        }
+        return;
+      }
+
+      const data = JSON.parse(textoBruto);
+
+      // Agora checando o retorno de sucesso estruturado do Paymento.io
+      if (data?.status === "success" || data?.status === "approved") {
+        setPagamentoSucesso(true);
       } else {
-        alert(data?.message || "Erro ao iniciar processamento.");
+        alert(data?.message || "Pagamento recusado. Verifique os dados ou saldo.");
       }
     } catch (err) {
-      alert(`Erro de rede: ${err.message}`);
+      alert(`Erro na comunicação com o servidor: ${err.message}`);
     } finally {
       setLoading(false);
-    }
-  };
-
-  // Monitora a navegação dentro da WebView para interceptar o sucesso
-  const lidarComMudancaDeStatus = (navState) => {
-    if (navState.url.includes("/sucesso") || navState.url.includes("success")) {
-      setModalVisible(false);
-      setPagamentoSucesso(true);
-    }
-    if (navState.url.includes("/cancelado")) {
-      setModalVisible(false);
-      alert("O pagamento foi cancelado pelo gateway.");
     }
   };
 
@@ -95,7 +103,7 @@ export default function PaymentScreen() {
         <View style={styles.cardSucesso}>
           <Text style={styles.iconSucesso}>🎉</Text>
           <Text style={styles.titleSucesso}>¡Pagamento Aprovado!</Text>
-          <Text style={styles.subtitleSucesso}>Seu plano Premium já está ativo via NOWPayments.</Text>
+          <Text style={styles.subtitleSucesso}>Seu plano Premium já está ativo via Paymento.io.</Text>
         </View>
       </View>
     );
@@ -123,26 +131,6 @@ export default function PaymentScreen() {
       <TouchableOpacity style={[styles.button, loading && styles.buttonDisabled]} onPress={processarPagamentoNowPayments} disabled={loading}>
         {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pagar Agora</Text>}
       </TouchableOpacity>
-
-      {/* WEBVIEW MODAL - Abre o gateway seguro por cima sem tirar o usuário do app */}
-      <Modal visible={modalVisible} animationType="slide" onRequestClose={() => setModalVisible(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={styles.headerModal}>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={styles.closeText}>✕ Voltar para o App</Text>
-            </TouchableOpacity>
-            <Text style={{ fontWeight: 'bold' }}>Ambiente de Pagamento Seguro</Text>
-          </View>
-          {checkoutUrl && (
-            <WebView 
-              source={{ uri: checkoutUrl }} 
-              onNavigationStateChange={lidarComMudancaDeStatus}
-              startInLoadingState={true}
-              renderLoading={() => <ActivityIndicator size="large" color="#28a745" style={{ position: 'absolute', top: '50%', left: '45%' }} />}
-            />
-          )}
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -155,8 +143,6 @@ const styles = StyleSheet.create({
   button: { backgroundColor: "#28a745", width: "100%", maxWidth: 400, height: 50, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 10 },
   buttonDisabled: { backgroundColor: "#6c757d" },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  headerModal: { height: 60, backgroundColor: '#f8f9fa', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, borderBottomWidth: 1, borderColor: '#eee', paddingTop: Platform.OS === 'ios' ? 20 : 0 },
-  closeText: { color: '#dc3545', fontWeight: 'bold' },
   containerSucesso: { flex: 1, backgroundColor: "#f4f7f6", justifyContent: "center", alignItems: "center" },
   cardSucesso: { backgroundColor: "#fff", padding: 30, borderRadius: 16, alignItems: "center" },
   iconSucesso: { fontSize: 60, marginBottom: 15 },

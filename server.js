@@ -6,53 +6,67 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
-const NOWPAYMENTS_URL = "https://api.nowpayments.io/v1/invoice";
+// Certifique-se de configurar a sua chave do Paymento no painel do Render
+const PAYMENTO_API_KEY = process.env.PAYMENTO_API_KEY;
+const PAYMENTO_URL = "https://api.paymento.io/v1/payments";
 
 app.get('/', (req, res) => {
-  res.send('🚀 Servidor Ativo - Fluxo Híbrido Protegido!');
+  res.send('🚀 Servidor Online - Integrado com Paymento.io!');
 });
 
+// Rota interceptora mantendo o mesmo nome esperado pelo seu app
 app.post('/process-nowpayments-card', async (req, res) => {
   try {
-    const { amount, currency, email } = req.body;
-    console.log(`[NOWPayments] Criando faturamento seguro para: ${email}`);
+    const { amount, currency, email, card } = req.body;
+
+    console.log(`[Paymento.io] Iniciando requisição direta de transação para: ${email}`);
 
     if (!email) {
-      return res.status(400).json({ status: "failed", message: "E-mail é obrigatório." });
+      return res.status(400).json({ status: "failed", message: "O e-mail é obrigatório." });
     }
 
+    // Estruturação do Payload oficial do Paymento.io
     const payload = {
-      price_amount: amount || 30.00, // Mantido 30 pelo limite mínimo fiat
-      price_currency: (currency || "BRL").toLowerCase(),
-      pay_currency: "usdttrc20",
-      order_id: `NP-${Date.now()}`,
-      order_description: "Assinatura Procurojob Premium",
+      amount: amount || 30.00,
+      currency: (currency || "BRL").toUpperCase(),
       customer_email: email.trim(),
-      success_url: "https://backend-social22.onrender.com/sucesso",
-      cancel_url: "https://backend-social22.onrender.com/cancelado"
+      order_id: `PAYM-${Date.now()}`,
+      payment_method: "crypto",
+      // Passamos os metadados do cartão simulado apenas para fins de registro e conformidade de logs no painel
+      metadata: {
+        last_four: card?.number ? card.number.slice(-4) : "0000",
+        expiry: card?.expiry || "00/00"
+      }
     };
 
-    const response = await fetch(NOWPAYMENTS_URL, {
+    const response = await fetch(PAYMENTO_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": NOWPAYMENTS_API_KEY
+        "Authorization": `Bearer ${PAYMENTO_API_KEY}`
       },
       body: JSON.stringify(payload)
     });
 
     const data = await response.json();
 
-    if (data && data.invoice_url) {
-      console.log(`[Sucesso] Link seguro de pagamento gerado.`);
-      return res.json({ status: "redirect", redirectUrl: data.invoice_url });
+    // Validando retorno de sucesso padrão da API deles
+    if (response.ok && (data.status === "pending" || data.status === "success" || data.id)) {
+      console.log(`[Sucesso Paymento] Cobrança inicializada com ID: ${data.id}`);
+      return res.json({ 
+        status: "success", 
+        message: "Cobrança gerada com sucesso!" 
+      });
     } else {
-      console.log(`[Falha API]:`, JSON.stringify(data));
-      return res.status(400).json({ status: "failed", message: data.message || "Erro no gateway." });
+      console.log(`[Erro API Paymento]:`, JSON.stringify(data));
+      return res.status(400).json({ 
+        status: "failed", 
+        message: data.message || "Falha na comunicação direta com os nós da blockchain." 
+      });
     }
+
   } catch (error) {
-    console.error("[Erro]:", error.message);
+    console.error("[Erro Crítico Paymento]:", error.message);
     return res.status(500).json({ status: "error", message: "Erro interno no servidor." });
   }
 });
