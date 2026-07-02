@@ -1,64 +1,32 @@
 const express = require('express');
-const cors = require('cors');
-const fetch = require('node-fetch');
-
+const axios = require('axios');
 const app = express();
-app.use(cors());
 app.use(express.json());
 
-// SUA API KEY CONFIGURADA
-const NOWPAYMENTS_API_KEY = "GCTC3QV-83MM1E7-JVF7QBM-H150X8X"; 
+const NOWPAYMENTS_API_KEY = 'SUA_API_KEY_AQUI';
 
-app.post('/nowpayments.io', async (req, res) => {
-  try {
-    const { amount, email, name } = req.body;
+app.post('/process-nowpayments-card', async (req, res) => {
+    const { amount, currency, email, card, deviceId } = req.body;
 
-    if (!amount || !email) {
-      return res.status(400).json({ success: false, message: "Dados incompletos." });
+    try {
+        // Exemplo: Encaminhando para o endpoint de processamento de cartão (se suportado pelo seu contrato com o gateway)
+        // ATENÇÃO: Verifique a documentação exata da API que você está usando
+        const response = await axios.post('https://api.nowpayments.io/v1/payment', {
+            price_amount: amount,
+            price_currency: currency,
+            pay_currency: 'btc', // Exemplo
+            ipn_callback_url: 'https://seu-site.com/ipn',
+            order_description: `Pagamento de ${email}`,
+            // Nota: Se a API da NOWPayments não aceitar os dados do cartão diretamente,
+            // você deve usar este endpoint para criar a fatura e retornar o link de checkout.
+        }, {
+            headers: { 'x-api-key': NOWPAYMENTS_API_KEY }
+        });
+
+        res.json({ status: 'redirect', redirectUrl: response.data.invoice_url });
+    } catch (error) {
+        res.status(500).json({ message: 'Erro no processamento: ' + error.message });
     }
-
-    // Configuração do Webhook e Retornos com seu domínio
-    const paymentData = {
-      price_amount: amount,
-      price_currency: "BRL",
-      ipn_callback_url: "https://backend-social22.onrender.com/nowpayments-webhook",
-      order_id: `ORDER-${Date.now()}`,
-      order_description: `Plano Premium - ${name || email}`,
-      success_url: "https://checkinpremium.com/sucesso",
-      cancel_url: "https://checkinpremium.com/cancelado"
-    };
-
-    const response = await fetch("https://api.nowpayments.io/v1/invoice", {
-      method: "POST",
-      headers: {
-        "x-api-key": NOWPAYMENTS_API_KEY,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(paymentData)
-    });
-
-    const data = await response.json();
-
-    if (data && data.invoice_url) {
-      return res.json({
-        success: true,
-        redirectUrl: data.invoice_url
-      });
-    } else {
-      return res.status(500).json({ success: false, message: "Erro ao criar fatura na NowPayments." });
-    }
-
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
 });
 
-// Rota para receber a confirmação do pagamento
-app.post('/nowpayments-webhook', (req, res) => {
-  console.log("Notificação recebida da NowPayments:", req.body);
-  // Aqui você adicionaria a lógica para liberar o acesso ao Premium no seu banco
-  res.sendStatus(200);
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+app.listen(3000, () => console.log('Servidor rodando'));
