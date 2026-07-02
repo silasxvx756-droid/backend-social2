@@ -3,64 +3,37 @@ import express from 'express';
 import cors from 'cors';
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
 const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
-
-// URL oficial atualizada para conversão transparente de Fiat para Cripto via API
-const NOWPAYMENTS_FIAT_URL = "https://api.nowpayments.io/v1/fiat-payment/convert";
+const NOWPAYMENTS_URL = "https://api.nowpayments.io/v1/invoice";
 
 app.get('/', (req, res) => {
-  res.send('🚀 Servidor Web Produção Ativo e Operando (Checkout Transparente)!');
+  res.send('🚀 Servidor Ativo - Fluxo Híbrido Protegido!');
 });
 
-// ====================================================================
-// 💳 ROTA TRANSPARENTE: RECEBE O CARTÃO E PROCESSA DIRETO NA API
-// ====================================================================
 app.post('/process-nowpayments-card', async (req, res) => {
   try {
-    const { amount, currency, email, name, cpf, card, deviceId } = req.body;
+    const { amount, currency, email } = req.body;
+    console.log(`[NOWPayments] Criando faturamento seguro para: ${email}`);
 
-    console.log(`[NOWPayments Direct] Iniciando checkout transparente para: ${email}`);
-
-    if (!email || !card || !card.number || !card.cvc || !card.expiry) {
-      return res.status(400).json({ 
-        status: "failed", 
-        message: "Dados de cartão ou usuário incompletos." 
-      });
+    if (!email) {
+      return res.status(400).json({ status: "failed", message: "E-mail é obrigatório." });
     }
 
-    // Processa a validade vinda do formato MM/AA
-    const expiryParts = card.expiry.split('/');
-    if (expiryParts.length !== 2) {
-      return res.status(400).json({ status: "failed", message: "Formato de validade incorreto (MM/AA)." });
-    }
-    const expiryMonth = expiryParts[0].trim();
-    const expiryYear = "20" + expiryParts[1].trim();
-
-    // Payload estruturado para a API de conversão fiat-to-crypto direta
     const payload = {
-      fiat_amount: amount || 30.00, // Lembrando do limite mínimo exigido pelos provedores fiat deles
-      fiat_currency: (currency || "BRL").toLowerCase(),
-      crypto_currency: "usdttrc20",
+      price_amount: amount || 30.00, // Mantido 30 pelo limite mínimo fiat
+      price_currency: (currency || "BRL").toLowerCase(),
+      pay_currency: "usdttrc20",
+      order_id: `NP-${Date.now()}`,
+      order_description: "Assinatura Procurojob Premium",
       customer_email: email.trim(),
-      customer_name: name ? name.trim() : "Cliente App",
-      customer_document: cpf ? cpf.replace(/\D/g, "") : "",
-      card_details: {
-        number: card.number.replace(/\s/g, ""),
-        cvc: card.cvc.trim(),
-        expiration_month: expiryMonth,
-        expiration_year: expiryYear
-      },
-      order_id: `NP-DIR-${Date.now()}`,
-      metadata: { device_id: deviceId || "não-informado" }
+      success_url: "https://backend-social22.onrender.com/sucesso",
+      cancel_url: "https://backend-social22.onrender.com/cancelado"
     };
 
-    console.log(`[NOWPayments Direct] Enviando dados do cartão de forma segura...`);
-
-    const response = await fetch(NOWPAYMENTS_FIAT_URL, {
+    const response = await fetch(NOWPAYMENTS_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -71,25 +44,18 @@ app.post('/process-nowpayments-card', async (req, res) => {
 
     const data = await response.json();
 
-    // Valida o retorno de aprovação direta da transação
-    if (data && (data.status === "approved" || data.status === "success" || data.success === true)) {
-      console.log(`[Sucesso] Cartão de ${email} APROVADO!`);
-      return res.json({ status: "approved", message: "Pagamento processado com sucesso!" });
+    if (data && data.invoice_url) {
+      console.log(`[Sucesso] Link seguro de pagamento gerado.`);
+      return res.json({ status: "redirect", redirectUrl: data.invoice_url });
     } else {
-      console.log(`[Recusado Direct] Resposta da API:`, JSON.stringify(data));
-      return res.status(400).json({ 
-        status: "failed", 
-        message: data.message || "Cartão recusado. Verifique os dados, o saldo ou o valor mínimo." 
-      });
+      console.log(`[Falha API]:`, JSON.stringify(data));
+      return res.status(400).json({ status: "failed", message: data.message || "Erro no gateway." });
     }
-
   } catch (error) {
-    console.error("[Erro Crítico Direct]:", error.message);
-    return res.status(500).json({ status: "error", message: "Erro interno ao processar o cartão." });
+    console.error("[Erro]:", error.message);
+    return res.status(500).json({ status: "error", message: "Erro interno no servidor." });
   }
 });
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor ativo na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
