@@ -1,193 +1,111 @@
-import express from "express";
-import mongoose from "mongoose";
-import dotenv from "dotenv";
-import cors from "cors";
-import http from "http";
-import { Server } from "socket.io";
-import { MercadoPagoConfig, Payment } from "mercadopago";
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
 
-dotenv.config();
-
-/* ================= CONFIGURAÇÃO DO MERCADO PAGO ================= */
-
-const mpClient = new MercadoPagoConfig({ 
-  accessToken: process.env.MP_ACCESS_TOKEN 
-});
-
-const paymentClient = new Payment(mpClient);
-
-/* ================= INICIALIZAÇÃO E MIDDLEWARES ================= */
+// Suporte para fetch no Node.js (necessário para versões antigas do Node)
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { 
-  cors: { origin: "*", methods: ["GET", "POST"] } 
-});
 
-app.use(cors({ origin: "*" }));
+// Configurações Globais de Middleware
+app.use(cors());
 app.use(express.json());
 
-/* ================= CONEXÃO BANCO DE DADOS ================= */
+// Resgata a API Key configurada no painel do Render
+const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("🍃 MongoDB conectado com sucesso!"))
-  .catch((err) => console.log("❌ Erro de conexão com o Mongo:", err));
+// Endpoint oficial de produção para parceiros Fiat da NOWPayments
+const NOWPAYMENTS_FIAT_URL = "https://api.nowpayments.io/v1/fiat-payment";
 
-/* ================= SCHEMA DO BANCO ================= */
+// Rota de Teste de Conexão (Apenas para checar se o servidor está online)
+app.get('/', (req, res) => {
+  res.send('🚀 Servidor Web Produção Ativo e Operando!');
+});
 
-const PaymentSchema = new mongoose.Schema({
-  paymentId: String,
-  name: String,
-  price: Number,
-  status: String,
-  email: String,
-  userId: String,
-  brand: String,
-  date: String,
-}, { timestamps: true });
-
-const PaymentModel = mongoose.model("Payment", PaymentSchema);
-
-/* ================= ROTA DE PAGAMENTO WEB REAL BLINDADA ================= */
-
-app.post("/card-payment", async (req, res) => {
+// ====================================================================
+// 💳 ROTA PRINCIPAL: RECEBE O CARTÃO DO FRONT-END E ENVIA PARA A API
+// ====================================================================
+app.post('/process-nowpayments-card', async (req, res) => {
   try {
-    console.log("=================================");
-    console.log("🔥 PAYMENT REQUEST RECEIVED (MODO WEB PRODUÇÃO)");
-    console.log(JSON.stringify(req.body, null, 2));
-    
-    const {
-      token,
-      payment_method_id,
-      email,
-      userId,
-      name,
-      cpf,
-      transaction_amount,
-      installments,
-      deviceId // <-- Aqui chega o MP_DEVICE_SESSION_ID coletado pelo script web
-    } = req.body;
+    const { amount, currency, email, name, cpf, card, deviceId } = req.body;
 
-    // Validação de segurança estrita
-    if (!token || !payment_method_id || !email) {
-      console.log("⚠️ REQUISIÇÃO REJEITADA: Faltam campos cruciais.");
+    // 1. Log inicial para monitoramento direto no painel do Render
+    console.log(`[NOWPayments] Nova tentativa de pagamento iniciada para o e-mail: ${email || 'Desconhecido'}`);
+
+    // 2. Validação interna de segurança (evita requisições quebradas)
+    if (!email || !card || !card.number || !card.cvc || !card.expiry) {
+      console.log(`[Aviso] Dados incompletos enviados pelo Front-end.`);
       return res.status(400).json({ 
-        success: false, 
-        error: "Campos cruciais faltando no corpo da requisição." 
+        status: "failed", 
+        message: "Dados de cartão ou usuário incompletos no servidor." 
       });
     }
 
-    // Captura o IP real do cliente que acessa o site (crucial para o antifraude web)
-    const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    
-    const firstName = name ? name.split(" ")[0] : "Cliente";
-    const lastName = name && name.split(" ").length > 1 ? name.split(" ").slice(1).join(" ") : "Silva";
+    // 3. Trata e quebra a string de validade ("MM/AA") vinda do React Native
+    const expiryParts = card.expiry.split('/');
+    if (expiryParts.length !== 2) {
+      return res.status(400).json({ status: "failed", message: "Formato de validade do cartão incorreto (use MM/AA)." });
+    }
+    const expiryMonth = expiryParts[0].trim();
+    const expiryYear = "20" + expiryParts[1].trim(); // Transforma "28" em "2028"
 
-    // Payload estruturado de acordo com as regras de risco da Web do MP
-    const paymentData = {
-      transaction_amount: Number(transaction_amount || 400),
-      token,
-      description: "Acesso Premium Procurojob",
-      installments: Number(installments || 1),
-      payment_method_id,
-      payer: {
-        email: email?.trim(),
-        first_name: firstName,
-        last_name: lastName,
-        identification: {
-          type: "CPF",
-          number: cpf ? cpf.replace(/\D/g, "") : "00000000000"
-        }
+    // 4. Monta o Payload exato exigido pelo gateway da NOWPayments
+    const payload = {
+      fiat_amount: amount || 10.00,
+      fiat_currency: currency || "BRL",
+      crypto_currency: "usdttrc20", // Moeda líquida estável que você receberá na sua carteira cripto
+      customer_email: email.trim(),
+      customer_name: name ? name.trim() : "Cliente App",
+      customer_document: cpf ? cpf.replace(/\D/g, "") : "", // Remove traços e pontos do CPF
+      card_details: {
+        number: card.number.replace(/\s/g, ""), // Remove espaços do número do cartão
+        cvc: card.cvc.trim(),
+        expiration_month: expiryMonth,
+        expiration_year: expiryYear
       },
-      additional_info: {
-        ip_address: clientIp,
-        items: [
-          {
-            id: "premium-access-01",
-            title: "Upgrade Premium - Procurojob",
-            description: "Plano profissional para designers gráficos",
-            category_id: "services",
-            quantity: 1,
-            unit_price: Number(transaction_amount || 400)
-          }
-        ]
+      order_id: `NP-${Date.now()}`,
+      metadata: {
+        device_id: deviceId || "não-informado"
       }
     };
 
-    console.log("=================================");
-    console.log("X-Meli-Session-Id injetado:", deviceId || "⚠️ Sem session ID web");
-    console.log("📤 ENVIANDO REQUISIÇÃO WEB AO MERCADO PAGO...");
-    
-    // Chamada oficial enviando o Token de Sessão Web legítimo
-    const result = await paymentClient.create({ 
-      body: paymentData,
-      requestOptions: {
-        headers: {
-          "X-Meli-Session-Id": String(deviceId),
-          "Authorization": `Bearer ${process.env.MP_ACCESS_TOKEN}`
-        }
-      }
+    console.log(`[NOWPayments] Enviando requisição criptografada para o gateway da NOWPayments...`);
+
+    // 5. Executa a chamada HTTP autenticada com a sua API Key do Render
+    const response = await fetch(NOWPAYMENTS_FIAT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": NOWPAYMENTS_API_KEY
+      },
+      body: JSON.stringify(payload)
     });
 
-    console.log("=================================");
-    console.log(`✅ RESPOSTA DO MERCADO PAGO: [${result.status}]`);
-    console.log(`🔍 DETALHE DO STATUS: [${result.status_detail}]`);
+    const data = await response.json();
 
-    // Registra a transação no MongoDB
-    const saved = await PaymentModel.create({
-      paymentId: String(result.id),
-      name: name || "Pagamento Web Real",
-      price: Number(transaction_amount || 400),
-      status: result.status,
-      email,
-      userId,
-      brand: payment_method_id,
-      date: new Date().toISOString(),
-    });
-
-    /* ================= SINALIZAÇÃO REAL-TIME VIA SOCKET ================= */
-    if (userId) {
-      console.log(`⚡ Notificando sala via Socket: ${userId}`);
-      io.to(userId).emit("payment-status", { 
-        userId, 
-        status: result.status, 
-        paymentId: result.id 
+    // 6. Analisa a resposta da NOWPayments e responde ao React Native
+    if (data && (data.status === "approved" || data.status === "success" || data.success === true)) {
+      console.log(`[Sucesso] Cartão de ${email} APROVADO com sucesso pela rede.`);
+      return res.json({ status: "approved", message: "Pagamento processado com sucesso!" });
+    } else {
+      console.log(`[Recusado] Falha no processamento. Resposta da API:`, JSON.stringify(data));
+      return res.status(400).json({ 
+        status: "failed", 
+        message: data.message || "Cartão recusado. Verifique o saldo, os dados digitados ou o limite mínimo." 
       });
     }
 
-    return res.json({ 
-      success: true, 
-      mercadoPago: result, 
-      local: saved 
-    });
-
-  } catch (err) {
-    console.log("=================================");
-    console.log("💥 ERRO PROCESSAMENTO WEB:", err.message);
-    
-    if (err.response?.data) {
-      console.log("DETALHES INTERNOS DA REJEIÇÃO MP:", JSON.stringify(err.response.data, null, 2));
-    }
-    
+  } catch (error) {
+    console.error("[Erro Crítico no Servidor]:", error.message);
     return res.status(500).json({ 
-      success: false, 
-      error: err.message,
-      details: err.response?.data || null
+      status: "error", 
+      message: "Erro interno no servidor ao tentar estabelecer contato com a Blockchain." 
     });
   }
 });
 
-/* ================= EVENTOS DO SOCKET.IO ================= */
-
-io.on("connection", (socket) => {
-  socket.on("join", (userId) => {
-    socket.join(userId);
-  });
-});
-
-/* ================= INICIALIZAÇÃO DO SERVIDOR ================= */
-
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, "0.0.0.0", () => {
+// Configuração da Porta de Escuta (O Render utiliza a variável process.env.PORT)
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
   console.log(`🚀 Servidor Web Produção ativo na porta ${PORT}`);
 });
