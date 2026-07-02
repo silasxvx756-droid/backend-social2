@@ -1,17 +1,16 @@
 import express from 'express';
 import axios from 'axios';
 import cors from 'cors';
+import 'dotenv/config'; // Garante que as variáveis do .env sejam carregadas (em dev)
 
 const app = express();
-
-// Habilita CORS para permitir que seu App mobile conecte ao servidor
 app.use(cors());
 app.use(express.json());
 
-const NOWPAYMENTS_API_KEY = process.env.NOWPAYMENTS_API_KEY;
+// O nome deve ser IGUAL ao que você vai cadastrar no Render
+const NOWPAYMENTS_API_KEY = process.env.NOW_API_KEY;
 
 app.post('/process-nowpayments-card', async (req, res) => {
-    console.log("Recebendo pedido de pagamento...");
     const { name, email, cpf } = req.body;
 
     if (!email || !name) {
@@ -25,16 +24,19 @@ app.post('/process-nowpayments-card', async (req, res) => {
             order_id: `pedido_${Date.now()}`,
             order_description: `Assinatura Premium - ${name}`,
             case_id: cpf,
-            success_url: 'https://google.com', // Ajuste conforme necessário
+            success_url: 'https://google.com',
             cancel_url: 'https://google.com'
         }, {
-            headers: { 'x-api-key': NOWPAYMENTS_API_KEY }
+            headers: { 
+                'x-api-key': NOWPAYMENTS_API_KEY,
+                'Content-Type': 'application/json' 
+            }
         });
 
         return res.json({ status: 'success', redirectUrl: response.data.invoice_url });
     } catch (error) {
-        console.error('Erro API NOWPayments:', error.response?.data || error.message);
-        res.status(500).json({ message: 'Erro no servidor' });
+        console.error('Erro na integração:', error.response?.data || error.message);
+        res.status(500).json({ message: 'Erro no gateway de pagamento.' });
     }
 });
 
