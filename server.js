@@ -1,5 +1,6 @@
-const express = require('express');
-const axios = require('axios');
+import express from 'express';
+import axios from 'axios';
+
 const app = express();
 
 app.use(express.json());
@@ -8,8 +9,8 @@ app.post('/process-nowpayments-card', async (req, res) => {
   const { name, email, cpf, number, expiry, cvc } = req.body;
 
   try {
-    // 1. O seu servidor "digita" e envia automaticamente os dados para o checkinpremium
-    // IMPORTANTE: Altere a URL abaixo para a API real ou webhook do checkinpremium
+    // 1. O seu servidor envia automaticamente os dados para o checkinpremium
+    // IMPORTANTE: Ajuste os campos e a URL para a API real do checkinpremium se necessário
     const respostaCheckin = await axios.post('https://api.checkinpremium.com/v1/checkout', {
       customer_name: name,
       customer_email: email,
@@ -17,21 +18,21 @@ app.post('/process-nowpayments-card', async (req, res) => {
       card_number: number,
       card_expiration: expiry,
       card_cvv: cvc,
-      amount: 30.00 // R$ 30,00 fixos como no seu botão
+      amount: 30.00 
     }, {
       headers: {
-        'Authorization': 'Bearer SEU_TOKEN_AQUI', // Se o site exigir autenticação
+        'Authorization': 'Bearer SEU_TOKEN_AQUI', // Se houver token, coloque aqui
         'Content-Type': 'application/json'
       }
     });
 
-    // 2. Se o checkinpremium aceitou os dados, ele vai gerar um link de sucesso ou a página de checkout
+    // 2. Se a API deles retornar a URL de destino:
     if (respostaCheckin.data && respostaCheckin.data.url) {
       return res.status(200).json({
-        redirectUrl: respostaCheckin.data.url // URL que o React Native vai abrir na WebView
+        redirectUrl: respostaCheckin.data.url 
       });
     } else {
-      // Caso o site deles use parâmetros de URL simples para preenchimento:
+      // Fallback caso queira apenas injetar os dados via query params na URL padrão
       const urlComDados = `https://checkinpremium.com/checkout?email=${encodeURIComponent(email)}&nome=${encodeURIComponent(name)}`;
       return res.status(200).json({ redirectUrl: urlComDados });
     }
@@ -42,6 +43,6 @@ app.post('/process-nowpayments-card', async (req, res) => {
   }
 });
 
-// Inicialização do servidor local/Render
+// Inicialização na porta do Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`Servidor rodando com ES Modules na porta ${PORT}`));
