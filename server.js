@@ -7,7 +7,6 @@ app.use(cors());
 
 // Sua chave da NOWPayments configurada diretamente
 const NOWPAYMENTS_API_KEY = "30MQ4ER-8JT4Z0J-KWXPFJ4-N7EMQ02"; 
-// Alterado para o endpoint de Invoice (Fatura), compatível com cartões/fiat via checkout deles
 const NOWPAYMENTS_URL = "https://api.nowpayments.io/v1/invoice"; 
 
 app.post('/process-nowpayments-card', async (req, res) => {
@@ -16,7 +15,6 @@ app.post('/process-nowpayments-card', async (req, res) => {
       price_amount, 
       price_currency, 
       order_description, 
-      customer_name, 
       customer_email 
     } = req.body;
 
@@ -28,15 +26,13 @@ app.post('/process-nowpayments-card', async (req, res) => {
       });
     }
 
-    // 2. Monta o payload no formato de Invoice aceito pela NOWPayments
+    // 2. Monta o payload REMOVENDO redirect_url e cancel_url para evitar rejeição
     const payload = {
       price_amount: price_amount,
       price_currency: price_currency || "brl",
       pay_currency: "usd", // Conversão para a moeda base do processador
       order_id: `ORDER_${Date.now()}`,
-      order_description: order_description || "Compra App Premium",
-      redirect_url: "https://seusite.com/sucesso", // Para onde o usuário vai se pagar pelo navegador externo
-      cancel_url: "https://seusite.com/cancelado"
+      order_description: order_description || "Compra App Premium"
     };
 
     // 3. Envia a requisição autenticada
@@ -62,7 +58,6 @@ app.post('/process-nowpayments-card', async (req, res) => {
     // 4. Retorna a URL do checkout para a WebView do React Native abrir
     return res.status(200).json({
       success: true,
-      // A API de Invoice retorna o link em 'invoice_url'
       redirectUrl: data.invoice_url || null 
     });
 
