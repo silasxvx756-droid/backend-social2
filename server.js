@@ -26,13 +26,14 @@ app.post('/process-nowpayments-card', async (req, res) => {
       });
     }
 
-    // 2. Monta o payload REMOVENDO redirect_url e cancel_url para evitar rejeição
+    // 2. CORREÇÃO: Mantemos o valor em BRL, mas NÃO forçamos o recebimento em FIAT.
+    // Deixamos a NOWPayments converter os R$ 30,00 para as criptos que sua conta aceita.
     const payload = {
-      price_amount: price_amount,
-      price_currency: price_currency || "brl",
-      pay_currency: "usd", // Conversão para a moeda base do processador
+      price_amount: price_amount,        // Ex: 30.00
+      price_currency: price_currency || "brl", // Moeda de preço original (Real)
       order_id: `ORDER_${Date.now()}`,
       order_description: order_description || "Compra App Premium"
+      // Removemos 'pay_currency: "usd"' porque causava o bloqueio de Fiat na sua conta.
     };
 
     // 3. Envia a requisição autenticada
