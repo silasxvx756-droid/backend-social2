@@ -25,16 +25,13 @@ app.post('/process-nowpayments-card', async (req, res) => {
       });
     }
 
-    // --- CONFIGURAÇÃO PARA FORÇAR CARTÃO ---
-    // Passamos BRL como preço, mas ativamos a conversão fiat nativa.
+    // --- PAYLOAD ATUALIZADO ---
+    // Removemos 'is_partners_fiat' para evitar a rejeição da API
     const payload = {
       price_amount: price_amount,
       price_currency: price_currency || "brl",
       order_id: `ORDER_${Date.now()}`,
       order_description: order_description || "Compra App Premium",
-      // Instrução para incluir provedores de Fiat-to-Crypto (Compra com Cartão)
-      is_partners_fiat: true, 
-      // Define o e-mail do cliente direto na fatura para agilizar o checkout do cartão
       customer_email: customer_email
     };
 

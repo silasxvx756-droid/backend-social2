@@ -7,18 +7,8 @@ import {
   TouchableOpacity, 
   ScrollView, 
   ActivityIndicator, 
-  Modal, 
-  Alert, 
-  SafeAreaView,
-  Platform, // Importado para checar se é Web ou Mobile
-  Linking   // Importado para abrir link externo no navegador se for Web
+  Alert 
 } from "react-native";
-
-// Importa condicionalmente para evitar erros em builds Web puros
-let WebView;
-if (Platform.OS !== 'web') {
-  WebView = require('react-native-webview').WebView;
-}
 
 export default function PaymentScreen() {
   const [form, setForm] = useState({ 
@@ -31,7 +21,6 @@ export default function PaymentScreen() {
   
   const [loading, setLoading] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
 
   const processarPagamentoNowPayments = async () => {
     if (!form.name || !form.email.includes("@") || !form.cpf) {
@@ -57,15 +46,8 @@ export default function PaymentScreen() {
       const data = await res.json();
 
       if (data.success && data.redirectUrl) {
-        // CORREÇÃO DE PLATAFORMA:
-        if (Platform.OS === 'web') {
-          // Se for navegador Web, abre em uma nova aba diretamente
-          Linking.openURL(data.redirectUrl);
-        } else {
-          // Se for Android/iOS, abre o fluxo normal de WebView nativo
-          setCheckoutUrl(data.redirectUrl);
-          setModalVisible(true);
-        }
+        // Define a URL para renderizar o iframe na própria tela
+        setCheckoutUrl(data.redirectUrl);
       } else {
         Alert.alert("Erro", data.message || "Falha ao iniciar processamento.");
       }
@@ -78,93 +60,97 @@ export default function PaymentScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Checkout Premium</Text>
-      <Text style={styles.subtitle}>Insira seus dados para prosseguir ao pagamento</Text>
+      {/* Se o link ainda não existe, mostra o formulário */}
+      {!checkoutUrl ? (
+        <View style={styles.card}>
+          <Text style={styles.title}>Checkout Premium</Text>
+          <Text style={styles.subtitle}>Insira seus dados para prosseguir ao pagamento</Text>
 
-      <Text style={styles.label}>Nome Completo</Text>
-      <TextInput 
-        style={styles.input} 
-        placeholder="Ex: João Silva" 
-        placeholderTextColor="#999"
-        value={form.name} 
-        onChangeText={(v) => setForm({...form, name: v})} 
-      />
+          <Text style={styles.label}>Nome Completo</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="Ex: João Silva" 
+            placeholderTextColor="#999"
+            value={form.name} 
+            onChangeText={(v) => setForm({...form, name: v})} 
+          />
 
-      <Text style={styles.label}>E-mail</Text>
-      <TextInput 
-        style={styles.input} 
-        placeholder="seu-email@dominio.com" 
-        placeholderTextColor="#999"
-        keyboardType="email-address" 
-        autoCapitalize="none" 
-        value={form.email} 
-        onChangeText={(v) => setForm({...form, email: v})} 
-      />
+          <Text style={styles.label}>E-mail</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="seu-email@dominio.com" 
+            placeholderTextColor="#999"
+            keyboardType="email-address" 
+            autoCapitalize="none" 
+            value={form.email} 
+            onChangeText={(v) => setForm({...form, email: v})} 
+          />
 
-      <Text style={styles.label}>CPF</Text>
-      <TextInput 
-        style={styles.input} 
-        placeholder="000.000.000-00" 
-        placeholderTextColor="#999"
-        keyboardType="numeric" 
-        value={form.cpf} 
-        onChangeText={(v) => setForm({...form, cpf: v})} 
-      />
-      
-      <View style={styles.divider} />
+          <Text style={styles.label}>CPF</Text>
+          <TextInput 
+            style={styles.input} 
+            placeholder="000.000.000-00" 
+            placeholderTextColor="#999"
+            keyboardType="numeric" 
+            value={form.cpf} 
+            onChangeText={(v) => setForm({...form, cpf: v})} 
+          />
+          
+          <View style={styles.divider} />
 
-      <View style={styles.priceContainer}>
-        <Text style={styles.priceLabel}>Total a pagar:</Text>
-        <Text style={styles.priceValue}>R$ {form.amount.replace('.', ',')}</Text>
-      </View>
+          <View style={styles.priceContainer}>
+            <Text style={styles.priceLabel}>Total a pagar:</Text>
+            <Text style={styles.priceValue}>R$ {form.amount.replace('.', ',')}</Text>
+          </View>
 
-      <TouchableOpacity 
-        style={styles.button} 
-        onPress={processarPagamentoNowPayments} 
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Ir para o Pagamento</Text>
-        )}
-      </TouchableOpacity>
-
-      {/* O Modal e o WebView só serão montados/renderizados se NÃO estiver na Web */}
-      {Platform.OS !== 'web' && (
-        <Modal visible={modalVisible} animationType="slide" transparent={false}>
-          <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-            <View style={{ flex: 1 }}>
-              {checkoutUrl && WebView && (
-                <WebView 
-                  source={{ uri: checkoutUrl }} 
-                  startInLoadingState={true}
-                  renderLoading={() => <ActivityIndicator size="large" color="#4C36CD" style={styles.absoluteCenter} />}
-                />
-              )}
-              <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
-                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>Fechar e Voltar</Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
-        </Modal>
+          <TouchableOpacity 
+            style={styles.button} 
+            onPress={processarPagamentoNowPayments} 
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>Ir para o Pagamento</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : (
+        // Se o link já existe, renderiza o Iframe na própria página
+        <View style={styles.iframeContainer}>
+          <TouchableOpacity style={styles.backButton} onPress={() => setCheckoutUrl(null)}>
+            <Text style={styles.backButtonText}>← Cancelar e Voltar</Text>
+          </TouchableOpacity>
+          
+          <iframe 
+            src={checkoutUrl} 
+            style={styles.webIframe}
+            title="NOWPayments Checkout"
+            allow="payment"
+          />
+        </View>
       )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, paddingTop: 60, backgroundColor: '#f9f9f9', flexGrow: 1, maxWidth: 500, alignSelf: 'center', width: '100%' },
-  title: { fontSize: 26, fontWeight: "bold", textAlign: 'center', color: '#111' },
-  subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 30, marginTop: 4 },
+  container: { padding: 20, paddingTop: 40, backgroundColor: '#f9f9f9', flexGrow: 1, alignItems: 'center', justifyContent: 'center' },
+  card: { backgroundColor: '#fff', padding: 30, borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0px 4px 20px rgba(0,0,0,0.05)' },
+  title: { fontSize: 24, fontWeight: "bold", textAlign: 'center', color: '#111' },
+  subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 25, marginTop: 4 },
   label: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 6 },
-  input: { height: 52, borderWidth: 1, borderColor: "#e0e0e0", borderRadius: 10, paddingHorizontal: 16, marginBottom: 18, fontSize: 16, color: '#333', backgroundColor: '#fff' },
-  button: { backgroundColor: "#4C36CD", height: 56, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 20 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 17 },
-  divider: { height: 1, backgroundColor: '#e5e5e5', marginVertical: 20 },
-  priceContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, marginBottom: 10 },
-  priceLabel: { fontSize: 16, color: '#666' },
-  priceValue: { fontSize: 22, fontWeight: 'bold', color: '#111' },
-  closeButton: { padding: 18, backgroundColor: '#111', alignItems: 'center' },
-  absoluteCenter: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -25 }, { translateY: -25 }] }
+  input: { height: 50, borderWidth: 1, borderColor: "#e0e0e0", borderRadius: 8, paddingHorizontal: 16, marginBottom: 16, fontSize: 16, color: '#333', backgroundColor: '#fff' },
+  button: { backgroundColor: "#4C36CD", height: 54, borderRadius: 10, justifyContent: "center", alignItems: "center", marginTop: 15, cursor: 'pointer' },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
+  divider: { height: 1, backgroundColor: '#e5e5e5', marginVertical: 15 },
+  priceContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
+  priceLabel: { fontSize: 15, color: '#666' },
+  priceValue: { fontSize: 20, fontWeight: 'bold', color: '#111' },
+  
+  // Estilos exclusivos da visualização do Iframe na Web
+  iframeContainer: { width: '100%', maxWidth: 800, height: '80vh', display: 'flex', flexDirection: 'column' },
+  backButton: { padding: 12, backgroundColor: '#111', borderRadius: 6, marginBottom: 10, alignSelf: 'flex-start', cursor: 'pointer' },
+  backButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  webIframe: { width: '100%', flex: 1, border: 'none', borderRadius: 8, boxShadow: '0px 4px 25px rgba(0,0,0,0.1)' }
 });
