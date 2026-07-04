@@ -1,4 +1,3 @@
-
 import React, { useState } from "react";
 import { 
   View, 
@@ -19,9 +18,6 @@ export default function PaymentScreen() {
     name: "", 
     email: "", 
     cpf: "",
-    cardNumber: "",
-    expiry: "", // Formato MM/AA
-    cvc: "",
     amount: "30.00",
     currency: "brl"
   });
@@ -30,20 +26,14 @@ export default function PaymentScreen() {
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
-  const processarPagamentoCartao = async () => {
+  const processarPagamentoNowPayments = async () => {
+    // Validação dos dados do cliente
     if (!form.name || !form.email.includes("@") || !form.cpf) {
-      Alert.alert("Erro", "Por favor, preencha os dados pessoais.");
-      return;
-    }
-    if (form.cardNumber.length < 13 || !form.expiry.includes("/") || form.cvc.length < 3) {
-      Alert.alert("Erro", "Por favor, preencha os dados do cartão corretamente.");
+      Alert.alert("Erro", "Por favor, preencha todos os campos corretamente.");
       return;
     }
 
     setLoading(true);
-
-    const [expiryMonth, expiryYear] = form.expiry.split("/");
-
     try {
       const res = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
         method: "POST",
@@ -54,31 +44,17 @@ export default function PaymentScreen() {
           order_description: "Compra Checkout Premium",
           customer_name: form.name,
           customer_email: form.email,
-          customer_cpf: form.cpf,
-          payment_data: {
-            card_number: form.cardNumber.replace(/\s+/g, ''),
-            expiry_month: expiryMonth.trim(),
-            expiry_year: "20" + expiryYear.trim(),
-            cvc: form.cvc,
-            holder_name: form.name
-          }
+          customer_cpf: form.cpf
         }) 
       });
 
       const data = await res.json();
 
-      setForm(prev => ({ ...prev, cardNumber: "", expiry: "", cvc: "" }));
-
-      // FIXED: Using bracket notation data['3ds_url'] instead of data.3ds_url
-      const urlDeAutenticacao = data.redirectUrl || data['3ds_url'] || data.checkout_url;
-
-      if (urlDeAutenticacao) {
-        setCheckoutUrl(urlDeAutenticacao);
+      if (data.success && data.redirectUrl) {
+        setCheckoutUrl(data.redirectUrl);
         setModalVisible(true);
-      } else if (data.status === "confirmed" || data.status === "waiting" || data.success) {
-        Alert.alert("Sucesso", "Pagamento enviado para processamento com sucesso!");
       } else {
-        Alert.alert("Erro no Cartão", data.message || "Não foi possível autorizar o cartão.");
+        Alert.alert("Erro", data.message || "Falha ao iniciar processamento.");
       }
     } catch (err) {
       Alert.alert("Erro", "Falha na conexão com o servidor de pagamentos.");
@@ -90,12 +66,13 @@ export default function PaymentScreen() {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Text style={styles.title}>Checkout Premium</Text>
-      <Text style={styles.subtitle}>Pagamento via Cartão de Crédito</Text>
+      <Text style={styles.subtitle}>Insira seus dados para prosseguir ao pagamento</Text>
 
-      <Text style={styles.label}>Nome do Titular (como no cartão)</Text>
+      {/* --- FORMULÁRIO DE DADOS PESSOAIS --- */}
+      <Text style={styles.label}>Nome Completo</Text>
       <TextInput 
         style={styles.input} 
-        placeholder="Ex: JOAO M SILVA" 
+        placeholder="Ex: João Silva" 
         placeholderTextColor="#999"
         value={form.name} 
         onChangeText={(v) => setForm({...form, name: v})} 
@@ -112,7 +89,7 @@ export default function PaymentScreen() {
         onChangeText={(v) => setForm({...form, email: v})} 
       />
 
-      <Text style={styles.label}>CPF do Titular</Text>
+      <Text style={styles.label}>CPF</Text>
       <TextInput 
         style={styles.input} 
         placeholder="000.000.000-00" 
@@ -124,60 +101,25 @@ export default function PaymentScreen() {
       
       <View style={styles.divider} />
 
-      <Text style={styles.label}>Número do Cartão</Text>
-      <TextInput 
-        style={styles.input} 
-        placeholder="0000 0000 0000 0000" 
-        placeholderTextColor="#999"
-        keyboardType="numeric" 
-        value={form.cardNumber} 
-        onChangeText={(v) => setForm({...form, cardNumber: v})} 
-      />
-
-      <View style={styles.row}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>Validade</Text>
-          <TextInput 
-            style={styles.input} 
-            placeholder="MM/AA" 
-            placeholderTextColor="#999"
-            maxLength={5}
-            value={form.expiry} 
-            onChangeText={(v) => setForm({...form, expiry: v})} 
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>CVC / CVV</Text>
-          <TextInput 
-            style={styles.input} 
-            placeholder="123" 
-            placeholderTextColor="#999"
-            keyboardType="numeric" 
-            maxLength={4}
-            secureTextEntry={true} 
-            value={form.cvc} 
-            onChangeText={(v) => setForm({...form, cvc: v})} 
-          />
-        </View>
-      </View>
-
+      {/* --- RESUMO DO VALOR --- */}
       <View style={styles.priceContainer}>
-        <Text style={styles.priceLabel}>Total a ser debitado:</Text>
+        <Text style={styles.priceLabel}>Total a pagar:</Text>
         <Text style={styles.priceValue}>R$ {form.amount.replace('.', ',')}</Text>
       </View>
 
       <TouchableOpacity 
         style={styles.button} 
-        onPress={processarPagamentoCartao} 
+        onPress={processarPagamentoNowPayments} 
         disabled={loading}
       >
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Pagar Agora</Text>
+          <Text style={styles.buttonText}>Ir para o Pagamento por Cartão</Text>
         )}
       </TouchableOpacity>
 
+      {/* --- MODAL DO WEBVIEW (Abre a tela segura com a opção de cartão) --- */}
       <Modal visible={modalVisible} animationType="slide" transparent={false}>
         <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
           <View style={{ flex: 1 }}>
@@ -189,7 +131,7 @@ export default function PaymentScreen() {
               />
             )}
             <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
-              <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>Concluir e Voltar</Text>
+              <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>Fechar e Voltar</Text>
             </TouchableOpacity>
           </View>
         </SafeAreaView>
@@ -201,17 +143,15 @@ export default function PaymentScreen() {
 const styles = StyleSheet.create({
   container: { padding: 24, paddingTop: 60, backgroundColor: '#f9f9f9', flexGrow: 1 },
   title: { fontSize: 26, fontWeight: "bold", textAlign: 'center', color: '#111' },
-  subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 25, marginTop: 4 },
-  label: { fontSize: 13, fontWeight: '600', color: '#555', marginBottom: 6 },
+  subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 30, marginTop: 4 },
+  label: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 6 },
   input: { height: 52, borderWidth: 1, borderColor: "#e0e0e0", borderRadius: 10, paddingHorizontal: 16, marginBottom: 18, fontSize: 16, color: '#333', backgroundColor: '#fff' },
-  row: { flexDirection: "row", gap: 16 },
-  button: { backgroundColor: "#4C36CD", height: 56, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 15 },
-  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 18 },
-  divider: { height: 1, backgroundColor: '#e5e5e5', marginVertical: 15 },
-  priceContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 15 },
-  priceLabel: { fontSize: 15, color: '#666' },
+  button: { backgroundColor: "#4C36CD", height: 56, borderRadius: 12, justifyContent: "center", alignItems: "center", marginTop: 20 },
+  buttonText: { color: "#fff", fontWeight: "bold", fontSize: 17 },
+  divider: { height: 1, backgroundColor: '#e5e5e5', marginVertical: 20 },
+  priceContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, marginBottom: 10 },
+  priceLabel: { fontSize: 16, color: '#666' },
   priceValue: { fontSize: 22, fontWeight: 'bold', color: '#111' },
   closeButton: { padding: 18, backgroundColor: '#111', alignItems: 'center' },
   absoluteCenter: { position: 'absolute', top: '50%', left: '50%', transform: [{ translateX: -25 }, { translateY: -25 }] }
 });
-
