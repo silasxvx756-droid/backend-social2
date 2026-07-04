@@ -5,7 +5,7 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Sua chave da NOWPayments configurada diretamente
+// Sua chave da NOWPayments
 const NOWPAYMENTS_API_KEY = "30MQ4ER-8JT4Z0J-KWXPFJ4-N7EMQ02"; 
 const NOWPAYMENTS_URL = "https://api.nowpayments.io/v1/invoice"; 
 
@@ -18,7 +18,6 @@ app.post('/process-nowpayments-card', async (req, res) => {
       customer_email 
     } = req.body;
 
-    // 1. Validação básica no servidor
     if (!price_amount || !customer_email) {
       return res.status(400).json({ 
         success: false, 
@@ -26,17 +25,19 @@ app.post('/process-nowpayments-card', async (req, res) => {
       });
     }
 
-    // 2. CORREÇÃO: Mantemos o valor em BRL, mas NÃO forçamos o recebimento em FIAT.
-    // Deixamos a NOWPayments converter os R$ 30,00 para as criptos que sua conta aceita.
+    // --- CONFIGURAÇÃO PARA FORÇAR CARTÃO ---
+    // Passamos BRL como preço, mas ativamos a conversão fiat nativa.
     const payload = {
-      price_amount: price_amount,        // Ex: 30.00
-      price_currency: price_currency || "brl", // Moeda de preço original (Real)
+      price_amount: price_amount,
+      price_currency: price_currency || "brl",
       order_id: `ORDER_${Date.now()}`,
-      order_description: order_description || "Compra App Premium"
-      // Removemos 'pay_currency: "usd"' porque causava o bloqueio de Fiat na sua conta.
+      order_description: order_description || "Compra App Premium",
+      // Instrução para incluir provedores de Fiat-to-Crypto (Compra com Cartão)
+      is_partners_fiat: true, 
+      // Define o e-mail do cliente direto na fatura para agilizar o checkout do cartão
+      customer_email: customer_email
     };
 
-    // 3. Envia a requisição autenticada
     const response = await fetch(NOWPAYMENTS_URL, {
       method: "POST",
       headers: {
@@ -56,7 +57,6 @@ app.post('/process-nowpayments-card', async (req, res) => {
       });
     }
 
-    // 4. Retorna a URL do checkout para a WebView do React Native abrir
     return res.status(200).json({
       success: true,
       redirectUrl: data.invoice_url || null 

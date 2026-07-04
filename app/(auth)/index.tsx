@@ -9,9 +9,16 @@ import {
   ActivityIndicator, 
   Modal, 
   Alert, 
-  SafeAreaView 
+  SafeAreaView,
+  Platform, // Importado para checar se é Web ou Mobile
+  Linking   // Importado para abrir link externo no navegador se for Web
 } from "react-native";
-import { WebView } from 'react-native-webview';
+
+// Importa condicionalmente para evitar erros em builds Web puros
+let WebView;
+if (Platform.OS !== 'web') {
+  WebView = require('react-native-webview').WebView;
+}
 
 export default function PaymentScreen() {
   const [form, setForm] = useState({ 
@@ -27,7 +34,6 @@ export default function PaymentScreen() {
   const [modalVisible, setModalVisible] = useState(false);
 
   const processarPagamentoNowPayments = async () => {
-    // Validação dos dados do cliente
     if (!form.name || !form.email.includes("@") || !form.cpf) {
       Alert.alert("Erro", "Por favor, preencha todos os campos corretamente.");
       return;
@@ -51,8 +57,15 @@ export default function PaymentScreen() {
       const data = await res.json();
 
       if (data.success && data.redirectUrl) {
-        setCheckoutUrl(data.redirectUrl);
-        setModalVisible(true);
+        // CORREÇÃO DE PLATAFORMA:
+        if (Platform.OS === 'web') {
+          // Se for navegador Web, abre em uma nova aba diretamente
+          Linking.openURL(data.redirectUrl);
+        } else {
+          // Se for Android/iOS, abre o fluxo normal de WebView nativo
+          setCheckoutUrl(data.redirectUrl);
+          setModalVisible(true);
+        }
       } else {
         Alert.alert("Erro", data.message || "Falha ao iniciar processamento.");
       }
@@ -68,7 +81,6 @@ export default function PaymentScreen() {
       <Text style={styles.title}>Checkout Premium</Text>
       <Text style={styles.subtitle}>Insira seus dados para prosseguir ao pagamento</Text>
 
-      {/* --- FORMULÁRIO DE DADOS PESSOAIS --- */}
       <Text style={styles.label}>Nome Completo</Text>
       <TextInput 
         style={styles.input} 
@@ -101,7 +113,6 @@ export default function PaymentScreen() {
       
       <View style={styles.divider} />
 
-      {/* --- RESUMO DO VALOR --- */}
       <View style={styles.priceContainer}>
         <Text style={styles.priceLabel}>Total a pagar:</Text>
         <Text style={styles.priceValue}>R$ {form.amount.replace('.', ',')}</Text>
@@ -115,33 +126,35 @@ export default function PaymentScreen() {
         {loading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Ir para o Pagamento por Cartão</Text>
+          <Text style={styles.buttonText}>Ir para o Pagamento</Text>
         )}
       </TouchableOpacity>
 
-      {/* --- MODAL DO WEBVIEW (Abre a tela segura com a opção de cartão) --- */}
-      <Modal visible={modalVisible} animationType="slide" transparent={false}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
-          <View style={{ flex: 1 }}>
-            {checkoutUrl && (
-              <WebView 
-                source={{ uri: checkoutUrl }} 
-                startInLoadingState={true}
-                renderLoading={() => <ActivityIndicator size="large" color="#4C36CD" style={styles.absoluteCenter} />}
-              />
-            )}
-            <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
-              <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>Fechar e Voltar</Text>
-            </TouchableOpacity>
-          </View>
-        </SafeAreaView>
-      </Modal>
+      {/* O Modal e o WebView só serão montados/renderizados se NÃO estiver na Web */}
+      {Platform.OS !== 'web' && (
+        <Modal visible={modalVisible} animationType="slide" transparent={false}>
+          <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+            <View style={{ flex: 1 }}>
+              {checkoutUrl && WebView && (
+                <WebView 
+                  source={{ uri: checkoutUrl }} 
+                  startInLoadingState={true}
+                  renderLoading={() => <ActivityIndicator size="large" color="#4C36CD" style={styles.absoluteCenter} />}
+                />
+              )}
+              <TouchableOpacity style={styles.closeButton} onPress={() => setModalVisible(false)}>
+                <Text style={{color: '#fff', fontWeight: 'bold', fontSize: 16}}>Fechar e Voltar</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 24, paddingTop: 60, backgroundColor: '#f9f9f9', flexGrow: 1 },
+  container: { padding: 24, paddingTop: 60, backgroundColor: '#f9f9f9', flexGrow: 1, maxWidth: 500, alignSelf: 'center', width: '100%' },
   title: { fontSize: 26, fontWeight: "bold", textAlign: 'center', color: '#111' },
   subtitle: { fontSize: 14, color: '#666', textAlign: 'center', marginBottom: 30, marginTop: 4 },
   label: { fontSize: 14, fontWeight: '600', color: '#444', marginBottom: 6 },
