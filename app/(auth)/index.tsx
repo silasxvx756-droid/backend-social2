@@ -16,13 +16,13 @@ export default function PaymentScreen() {
     email: "", 
     cpf: "",
     amount: "30.00",
-    currency: "brl"
+    currency: "BRL"
   });
   
   const [loading, setLoading] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState(null);
 
-  const processarPagamentoNowPayments = async () => {
+  const processarPagamentoMaxelpay = async () => {
     if (!form.name || !form.email.includes("@") || !form.cpf) {
       Alert.alert("Erro", "Por favor, preencha todos os campos corretamente.");
       return;
@@ -30,13 +30,14 @@ export default function PaymentScreen() {
 
     setLoading(true);
     try {
+      // Faz a chamada para o seu backend no Render
       const res = await fetch("https://backend-social22.onrender.com/process-nowpayments-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           price_amount: parseFloat(form.amount),
           price_currency: form.currency,
-          order_description: "Compra Checkout Premium",
+          order_description: "Compra Acesso Premium",
           customer_name: form.name,
           customer_email: form.email,
           customer_cpf: form.cpf
@@ -46,7 +47,7 @@ export default function PaymentScreen() {
       const data = await res.json();
 
       if (data.success && data.redirectUrl) {
-        // Define a URL para renderizar o iframe na própria tela
+        // Alimenta a URL e exibe o iframe na mesma tela
         setCheckoutUrl(data.redirectUrl);
       } else {
         Alert.alert("Erro", data.message || "Falha ao iniciar processamento.");
@@ -60,11 +61,11 @@ export default function PaymentScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* Se o link ainda não existe, mostra o formulário */}
       {!checkoutUrl ? (
+        // FORMULÁRIO DE DADOS
         <View style={styles.card}>
-          <Text style={styles.title}>Checkout Premium</Text>
-          <Text style={styles.subtitle}>Insira seus dados para prosseguir ao pagamento</Text>
+          <Text style={styles.title}>Checkout Seguro</Text>
+          <Text style={styles.subtitle}>Preencha para pagar com Cartão de Crédito</Text>
 
           <Text style={styles.label}>Nome Completo</Text>
           <TextInput 
@@ -105,18 +106,18 @@ export default function PaymentScreen() {
 
           <TouchableOpacity 
             style={styles.button} 
-            onPress={processarPagamentoNowPayments} 
+            onPress={processarPagamentoMaxelpay} 
             disabled={loading}
           >
             {loading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.buttonText}>Ir para o Pagamento</Text>
+              <Text style={styles.buttonText}>Acessar Tela de Cartão</Text>
             )}
           </TouchableOpacity>
         </View>
       ) : (
-        // Se o link já existe, renderiza o Iframe na própria página
+        // IFRAME INTEGRADO NA MESMA TELA (EXPO WEB)
         <View style={styles.iframeContainer}>
           <TouchableOpacity style={styles.backButton} onPress={() => setCheckoutUrl(null)}>
             <Text style={styles.backButtonText}>← Cancelar e Voltar</Text>
@@ -125,7 +126,7 @@ export default function PaymentScreen() {
           <iframe 
             src={checkoutUrl} 
             style={styles.webIframe}
-            title="NOWPayments Checkout"
+            title="Maxelpay Checkout"
             allow="payment"
           />
         </View>
@@ -148,7 +149,6 @@ const styles = StyleSheet.create({
   priceLabel: { fontSize: 15, color: '#666' },
   priceValue: { fontSize: 20, fontWeight: 'bold', color: '#111' },
   
-  // Estilos exclusivos da visualização do Iframe na Web
   iframeContainer: { width: '100%', maxWidth: 800, height: '80vh', display: 'flex', flexDirection: 'column' },
   backButton: { padding: 12, backgroundColor: '#111', borderRadius: 6, marginBottom: 10, alignSelf: 'flex-start', cursor: 'pointer' },
   backButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },

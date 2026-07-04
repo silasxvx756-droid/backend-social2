@@ -5,9 +5,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// Sua chave da NOWPayments
-const NOWPAYMENTS_API_KEY = "30MQ4ER-8JT4Z0J-KWXPFJ4-N7EMQ02"; 
-const NOWPAYMENTS_URL = "https://api.nowpayments.io/v1/invoice"; 
+// Sua chave da Maxelpay configurada diretamente
+const MAXELPAY_API_KEY = "pk_live_6IOdLmr1bNgiOQNQtvnEhmvdxVCU9yLv"; 
+const MAXELPAY_URL = "https://api.maxelpay.com/v1/checkout"; // Endpoint padrão de checkout
 
 app.post('/process-nowpayments-card', async (req, res) => {
   try {
@@ -15,9 +15,12 @@ app.post('/process-nowpayments-card', async (req, res) => {
       price_amount, 
       price_currency, 
       order_description, 
-      customer_email 
+      customer_name,
+      customer_email,
+      customer_cpf
     } = req.body;
 
+    // Validação básica no servidor
     if (!price_amount || !customer_email) {
       return res.status(400).json({ 
         success: false, 
@@ -25,21 +28,26 @@ app.post('/process-nowpayments-card', async (req, res) => {
       });
     }
 
-    // --- PAYLOAD ATUALIZADO ---
-    // Removemos 'is_partners_fiat' para evitar a rejeição da API
+    // Montagem do payload conforme especificações de checkout da Maxelpay
     const payload = {
-      price_amount: price_amount,
-      price_currency: price_currency || "brl",
-      order_id: `ORDER_${Date.now()}`,
-      order_description: order_description || "Compra App Premium",
-      customer_email: customer_email
+      amount: Math.round(price_amount * 100), // Geralmente gateways processam centavos (ex: 3000 para R$ 30,00)
+      currency: price_currency || "BRL",
+      order_id: `MAXEL_${Date.now()}`,
+      description: order_description || "Compra App Premium",
+      payment_methods: ["credit_card"], // Força o checkout focado em cartão
+      customer: {
+        name: customer_name,
+        email: customer_email,
+        document: customer_cpf
+      }
     };
 
-    const response = await fetch(NOWPAYMENTS_URL, {
+    // Envio da requisição autenticada com o Bearer Token do seu pk_live
+    const response = await fetch(MAXELPAY_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": NOWPAYMENTS_API_KEY
+        "Authorization": `Bearer ${MAXELPAY_API_KEY}`
       },
       body: JSON.stringify(payload)
     });
@@ -47,16 +55,17 @@ app.post('/process-nowpayments-card', async (req, res) => {
     const data = await response.json();
 
     if (!response.ok) {
-      console.error("Erro da NOWPayments:", data);
+      console.error("Erro da Maxelpay:", data);
       return res.status(response.status).json({
         success: false,
-        message: data.message || "Erro ao gerar a ordem de pagamento."
+        message: data.message || "Erro ao gerar o link de pagamento."
       });
     }
 
+    // Retorna a URL de checkout gerada pela Maxelpay
     return res.status(200).json({
       success: true,
-      redirectUrl: data.invoice_url || null 
+      redirectUrl: data.checkout_url || data.url || null 
     });
 
   } catch (error) {
@@ -70,5 +79,5 @@ app.post('/process-nowpayments-card', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`Servidor rodando com sucesso na porta ${PORT}`);
+  console.log(`Servidor Maxelpay rodando com sucesso na porta ${PORT}`);
 });
