@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from "react-native";
-import { WebView } from "react-native-webview";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform } from "react-native";
 
 export default function PaymentScreen() {
   const [form, setForm] = useState({
@@ -12,7 +11,6 @@ export default function PaymentScreen() {
   });
 
   const [loading, setLoading] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [orderId, setOrderId] = useState(null);
 
   const processarPagamento = async () => {
@@ -23,7 +21,6 @@ export default function PaymentScreen() {
 
     setLoading(true);
     try {
-      // 1) Seu backend cria a cobrança no PSP/marketplace e retorna checkoutUrl + orderId
       const res = await fetch("https://backend-social22.onrender.com/create-card-payment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -41,7 +38,13 @@ export default function PaymentScreen() {
 
       if (data?.success && data.checkoutUrl && data.orderId) {
         setOrderId(data.orderId);
-        setCheckoutUrl(data.checkoutUrl);
+
+        // Se estiver usando Expo Web, redireciona diretamente no navegador
+        if (Platform.OS === "web") {
+          window.location.href = data.checkoutUrl;
+        } else {
+          Alert.alert("Sucesso", "Redirecionando para o pagamento...");
+        }
       } else {
         Alert.alert("Erro", data?.message || "Falha ao iniciar processamento.");
       }
@@ -52,96 +55,53 @@ export default function PaymentScreen() {
     }
   };
 
-  const checarStatus = async () => {
-    if (!orderId) return;
-    try {
-      const res = await fetch(`https://backend-social22.onrender.com/payment-status/${orderId}`);
-      const data = await res.json();
-
-      if (data?.paid) {
-        Alert.alert("Pagamento confirmado", "Obrigado! Você já pode liberar o acesso.");
-        setCheckoutUrl(null);
-      } else {
-        Alert.alert("Pagamento não confirmado", "Aguardando confirmação do provedor.");
-      }
-    } catch (e) {
-      Alert.alert("Erro", "Não foi possível consultar o status.");
-    }
-  };
-
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {!checkoutUrl ? (
-        <View style={styles.card}>
-          <Text style={styles.title}>Checkout Seguro</Text>
-          <Text style={styles.subtitle}>Pague com Cartão de Crédito</Text>
+      <View style={styles.card}>
+        <Text style={styles.title}>Checkout Seguro</Text>
+        <Text style={styles.subtitle}>Pague com Cartão de Crédito</Text>
 
-          <Text style={styles.label}>Nome Completo</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Ex: João Silva"
-            placeholderTextColor="#999"
-            value={form.name}
-            onChangeText={(v) => setForm({ ...form, name: v })}
-          />
+        <Text style={styles.label}>Nome Completo</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Ex: João Silva"
+          placeholderTextColor="#999"
+          value={form.name}
+          onChangeText={(v) => setForm({ ...form, name: v })}
+        />
 
-          <Text style={styles.label}>E-mail</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="seu-email@dominio.com"
-            placeholderTextColor="#999"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={form.email}
-            onChangeText={(v) => setForm({ ...form, email: v })}
-          />
+        <Text style={styles.label}>E-mail</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="seu-email@dominio.com"
+          placeholderTextColor="#999"
+          keyboardType="email-address"
+          autoCapitalize="none"
+          value={form.email}
+          onChangeText={(v) => setForm({ ...form, email: v })}
+        />
 
-          <Text style={styles.label}>CPF</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="000.000.000-00"
-            placeholderTextColor="#999"
-            keyboardType="numeric"
-            value={form.cpf}
-            onChangeText={(v) => setForm({ ...form, cpf: v })}
-          />
+        <Text style={styles.label}>CPF</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="000.000.000-00"
+          placeholderTextColor="#999"
+          keyboardType="numeric"
+          value={form.cpf}
+          onChangeText={(v) => setForm({ ...form, cpf: v })}
+        />
 
-          <View style={styles.divider} />
+        <View style={styles.divider} />
 
-          <View style={styles.priceContainer}>
-            <Text style={styles.priceLabel}>Total a pagar:</Text>
-            <Text style={styles.priceValue}>R$ {form.amount.replace(".", ",")}</Text>
-          </View>
-
-          <TouchableOpacity style={styles.button} onPress={processarPagamento} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Acessar Cartão</Text>}
-          </TouchableOpacity>
+        <View style={styles.priceContainer}>
+          <Text style={styles.priceLabel}>Total a pagar:</Text>
+          <Text style={styles.priceValue}>R$ {form.amount.replace(".", ",")}</Text>
         </View>
-      ) : (
-        <View style={styles.iframeContainer}>
-          <TouchableOpacity style={styles.backButton} onPress={() => setCheckoutUrl(null)}>
-            <Text style={styles.backButtonText}>← Cancelar e Voltar</Text>
-          </TouchableOpacity>
 
-          <WebView
-            source={{ uri: checkoutUrl }}
-            style={styles.webIframe}
-            startInLoadingState
-            renderLoading={() => <ActivityIndicator />}
-            onNavigationStateChange={(navState) => {
-              // Quando o PSP redirecionar para uma URL de sucesso/cancelamento,
-              // você consulta o status.
-              const url = navState?.url || "";
-              if (url.includes("success") || url.includes("approved")) {
-                checarStatus();
-              }
-              if (url.includes("cancel") || url.includes("failed")) {
-                setCheckoutUrl(null);
-              }
-            }}
-          />
-        </View>
-      )}
+        <TouchableOpacity style={styles.button} onPress={processarPagamento} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Ir para o Pagamento</Text>}
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
@@ -186,15 +146,11 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
+    marginTop: 10,
   },
   buttonText: { color: "#fff", fontWeight: "bold", fontSize: 16 },
   divider: { height: 1, backgroundColor: "#e5e5e5", marginVertical: 15 },
   priceContainer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 5 },
   priceLabel: { fontSize: 15, color: "#666" },
   priceValue: { fontSize: 20, fontWeight: "bold", color: "#111" },
-
-  iframeContainer: { width: "100%", maxWidth: 800, height: "80vh" },
-  backButton: { padding: 12, backgroundColor: "#111", borderRadius: 6, marginBottom: 10, alignSelf: "flex-start" },
-  backButtonText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
-  webIframe: { width: "100%", flex: 1, borderRadius: 8 },
 });
