@@ -1,5 +1,5 @@
-const express = require("express");
-const cors = require("cors");
+import express from "express";
+import cors from "cors";
 
 const app = express();
 
@@ -8,7 +8,7 @@ app.use(express.json());
 
 // Sua chave Live da MaxelPay
 const MAXELPAY_API_KEY = "pk_live_6IOdLmr1bNgiOQNQtvnEhmvdxVCU9yLv";
-const MAXELPAY_URL = "https://api.maxelpay.com/v1"; // Endpoint padrão da API v1 MaxelPay
+const MAXELPAY_URL = "https://api.maxelpay.com/v1";
 
 /**
  * 1. ROTA PARA CRIAR O CHECKOUT / PAGAMENTO
@@ -26,7 +26,6 @@ app.post("/create-card-payment", async (req, res) => {
 
     const internalOrderId = "ORD-" + Date.now();
 
-    // Estrutura de requisição adaptada para os campos da MaxelPay
     const response = await fetch(`${MAXELPAY_URL}/orders`, {
       method: "POST",
       headers: {
@@ -34,32 +33,30 @@ app.post("/create-card-payment", async (req, res) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        amount: Math.round(price_amount * 100), // MaxelPay (assim como a maioria dos gateways) costuma receber valores em centavos (Ex: 30.00 vira 3000)
+        amount: Math.round(price_amount * 100),
         currency: price_currency || "BRL",
         description: order_description || "Compra Acesso Premium",
         order_id: internalOrderId,
-        payment_methods: ["credit_card"], // Força o método para cartão conforme seu app pede
+        payment_methods: ["credit_card"],
         customer: {
           name: customer_name,
           email: customer_email,
           document: {
             type: "CPF",
-            number: customer_cpf.replace(/\D/g, "") // Remove pontos e traços do CPF deixando apenas números
+            number: customer_cpf.replace(/\D/g, "")
           }
         },
-        // URLs para onde o cliente vai após pagar ou cancelar no checkout deles
         redirect_url: "https://backend-social22.onrender.com/payment-callback", 
         review_url: "https://backend-social22.onrender.com/payment-callback"
       }),
     });
 
     const data = await response.json();
+    console.log("Resposta exata da MaxelPay:", data); // Log esperto para você ver no Render
 
-    // Se a MaxelPay retornar a URL de checkout com sucesso
     if (response.ok && (data.checkout_url || data.url || data.id)) {
       return res.status(200).json({
         success: true,
-        // Captura o link que redirecionará o cliente para a tela de pagamento segura deles
         checkoutUrl: data.checkout_url || data.url,
         orderId: data.id || internalOrderId,
       });
@@ -95,7 +92,6 @@ app.get("/payment-status/:orderId", async (req, res) => {
 
     const data = await response.json();
 
-    // Na MaxelPay os status de sucesso costumam ser 'paid', 'approved' ou 'completed'
     const isPaid = response.ok && (data.status === "paid" || data.status === "approved" || data.status === "completed");
 
     return res.status(200).json({
