@@ -6,9 +6,12 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// 1. Configura a SDK oficial do Mercado Pago com o seu Token de Produção
+// COLE O SEU ACCESSTOKEN AQUI (Certifique-se de que não há espaços antes ou depois)
+const MERCADO_PAGO_TOKEN = 'APP_USR-2229766877962184-070511-a692a9a81ccd12072e7a6ca446fcea0d-3121279336'.trim();
+
+// 1. Configura a SDK oficial do Mercado Pago com o Token tratado
 const client = new MercadoPagoConfig({ 
-  accessToken: 'APP_USR-2229766877962184-070511-a692a9a81ccd12072e7a6ca446fcea0d-3121279336' 
+  accessToken: MERCADO_PAGO_TOKEN 
 });
 const payment = new Payment(client);
 
@@ -18,7 +21,6 @@ const TIPO_CHAVE_PIX = "email";
 
 /**
  * 2. ROTA DE CHECKOUT (CARTÃO)
- * Usada pelo front-end do seu app para processar a cobrança inicial
  */
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
@@ -108,7 +110,6 @@ app.post('/card-payment', async (req, res) => {
 
 /**
  * 3. ROTA DE WEBHOOK (ESCUTA ATUALIZAÇÕES E ENVIA O PIX AUTOMÁTICO)
- * URL no Mercado Pago: https://backend-social22.onrender.com/mercado-pago-webhook
  */
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
@@ -123,8 +124,6 @@ app.post('/mercado-pago-webhook', async (req, res) => {
 
       if (paymentData.status === 'approved') {
         const userId = paymentData.metadata?.user_id;
-        
-        // Garante a captura exata do valor líquido (pós-taxa) direto do objeto do Mercado Pago
         const valorLiquido = paymentData.transaction_details?.net_received_amount;
 
         console.log(`\n============= 💸 INICIANDO REPASSE AUTOMÁTICO =============`);
@@ -135,11 +134,10 @@ app.post('/mercado-pago-webhook', async (req, res) => {
         const transferResponse = await fetch("https://api.mercadopago.com/v1/transfers", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer APP_USR-2229766877962184-070511-a692a9a81ccd12072e7a6ca446fcea0d-3121279336`,
+            "Authorization": `Bearer ${MERCADO_PAGO_TOKEN}`, // Usa a mesma variável corrigida aqui
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            // Passa o valor líquido direto e convertido de forma limpa para a API
             amount: Number(paymentData.transaction_details.net_received_amount),
             description: `Repasse Procurojob Ref: ${paymentId}`,
             destination: {
@@ -158,7 +156,6 @@ app.post('/mercado-pago-webhook', async (req, res) => {
       }
     }
 
-    // Retorna 200 OK para o Mercado Pago saber que a notificação foi entregue
     return res.status(200).send("OK");
 
   } catch (error) {
@@ -168,7 +165,6 @@ app.post('/mercado-pago-webhook', async (req, res) => {
   }
 });
 
-// Inicialização do servidor na porta do Render
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor do Procurojob rodando com sucesso na porta ${PORT}`);
