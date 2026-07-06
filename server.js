@@ -12,13 +12,13 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
-// 1. Configura a SDK oficial com o Token vindo do seu .env
+// Configura a SDK oficial com o Token vindo do ambiente
 const mpClient = new MercadoPagoConfig({
   accessToken: process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "",
 });
 const paymentInstance = new Payment(mpClient);
 
-// Suas configurações de repasse Pix pessoal
+// Configurações de repasse Pix pessoal do Procurojob
 const MINHA_CHAVE_PIX = "silas_santos@outlook.com"; 
 const TIPO_CHAVE_PIX = "email"; 
 
@@ -56,16 +56,16 @@ const upload = multer({ storage });
 
 /* ================= MONGODB ================= */
 if (!process.env.MONGO_URI) {
-  console.error("❌ MONGO_URI não definido");
+  console.error("❌ MONGO_URI não definido nas variáveis de ambiente");
   process.exit(1);
 }
 
 mongoose
   .connect(process.env.MONGO_URI)
-  .then(() => console.log("🍃 MongoDB conectado"))
-  .catch((err) => console.log("❌ Mongo erro:", err));
+  .then(() => console.log("🍃 MongoDB conectado com sucesso!"))
+  .catch((err) => console.log("❌ Erro ao conectar no MongoDB:", err));
 
-/* ================= MODELS ================= */
+/* ================= MODELS (ESTRUTURA COMPLETA PROCUROJOB) ================= */
 const userSchema = new mongoose.Schema({
   id: String,
   username: { type: String, unique: true },
@@ -129,11 +129,11 @@ const paymentSchema = new mongoose.Schema({
 }, { timestamps: true });
 const PaymentModel = mongoose.model("Payment", paymentSchema);
 
-/* ================= ROOT & HEALTH ================= */
-app.get("/", (req, res) => res.send("Servidor rodando 🚀"));
+/* ================= ROOT & HEALTH CHECK ================= */
+app.get("/", (req, res) => res.send("Servidor do Procurojob rodando perfeitamente 🚀"));
 app.get("/health", (req, res) => res.json({ success: true, status: "online" }));
 
-/* ================= HELPERS ================= */
+/* ================= HELPERS (CLERK VALIDATION) ================= */
 const fetchClerkUserById = async (clerkId) => {
   try {
     const response = await fetch(`https://api.clerk.dev/v1/users/${clerkId}`, {
@@ -148,12 +148,12 @@ const fetchClerkUserById = async (clerkId) => {
       avatar: user.profile_image_url || "",
     };
   } catch (err) {
-    console.log("Erro Clerk:", err);
+    console.log("Erro ao buscar dados no Clerk:", err);
     return null;
   }
 };
 
-/* ================= POSTS ================= */
+/* ================= POSTS & TIMELINE ================= */
 app.get("/posts", async (req, res) => {
   try {
     const posts = await Post.find().sort({ createdAt: -1 });
@@ -189,16 +189,19 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
     io.emit("new-post", post);
     res.status(201).json(post);
   } catch (err) {
-    console.log("Erro upload:", err);
+    console.log("Erro no upload do post:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-/* ================= MERCADO PAGO INTEGRATION ================= */
+/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO) ================= */
 
-// ROTA 1: PROCESSAR PAGAMENTO DO CARTÃO VIA FRONT-END
+// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (CORRIGIDA COM RE-INJEÇÃO DE TOKEN)
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
+  
+  // Resgata o token diretamente na chamada para anular escopos perdidos do Render
+  const tokenAmbiente = process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "";
 
   try {
     const { token, payment_method_id, transaction_amount, installments, email, userId, name, cpf, deviceId } = req.body;
@@ -223,7 +226,10 @@ app.post('/card-payment', async (req, res) => {
       },
       requestOptions: {
         idempotencyKey: idempotencyKey,
-        headers: { 'X-Melidata-Session-Id': deviceId }
+        headers: { 
+          'X-Melidata-Session-Id': deviceId,
+          'Authorization': `Bearer ${tokenAmbiente}` // Força o cabeçalho explicitamente
+        }
       }
     };
 
@@ -231,7 +237,7 @@ app.post('/card-payment', async (req, res) => {
 
     console.log(`\n✅ RESPOSTA DO MERCADO PAGO: ID ${result.id} | STATUS: ${result.status}`);
 
-    // Cria o registro pendente/aprovado no seu banco de dados local com segurança
+    // Salva na coleção local sem expor dados do cartão fisicamente
     const localPayment = await PaymentModel.create({
       id: String(result.id),
       name: name,
@@ -256,10 +262,11 @@ app.post('/card-payment', async (req, res) => {
   }
 });
 
-// ROTA 2: WEBHOOK DO MERCADO PAGO PARA ESCUTAR ATUALIZAÇÕES E ENVIAR PIX
+// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
     const { action, data } = req.body;
+    const tokenAmbiente = process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "";
 
     if ((action === "payment.updated" || action === "payment.created") && data && data.id) {
       const paymentId = data.id;
@@ -274,18 +281,18 @@ app.post('/mercado-pago-webhook', async (req, res) => {
         console.log(`\n============= 💸 INICIANDO REPASSE AUTOMÁTICO =============`);
         console.log(`Pagamento aprovado: ${paymentId} | Valor Líquido: R$ ${valorLiquido}`);
 
-        // Atualiza o status no seu MongoDB local para aprovado
+        // Atualiza banco de dados local
         await PaymentModel.findOneAndUpdate({ id: String(paymentId) }, { status: "approved" });
 
-        // Dispara o repasse Pix usando o token armazenado no .env
+        // Executa a transferência Pix direta para sua conta
         const transferResponse = await fetch("https://api.mercadopago.com/v1/transfers", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${process.env.MP_ACCESS_TOKEN.trim()}`,
+            "Authorization": `Bearer ${tokenAmbiente}`,
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            amount: Number(paymentData.transaction_details.net_received_amount),
+            amount: Number(valorLiquido),
             description: `Repasse Procurojob Ref: ${paymentId}`,
             destination: {
               type: "pix",
@@ -295,7 +302,7 @@ app.post('/mercado-pago-webhook', async (req, res) => {
         });
 
         const transferResult = await transferResponse.json();
-        console.log("Resultado da API de Transferência:", transferResult);
+        console.log("Resultado da API de Transferência Pix:", transferResult);
         console.log(`============================================================\n`);
       }
     }
@@ -306,7 +313,7 @@ app.post('/mercado-pago-webhook', async (req, res) => {
   }
 });
 
-// ROTAS DE CONSULTA E DELEÇÃO DO BANCO LOCAL
+// HISTÓRICO LOCAL DE TRANSAÇÕES
 app.get("/payments", async (req, res) => {
   try {
     const payments = await PaymentModel.find().sort({ createdAt: -1 });
@@ -327,18 +334,18 @@ app.delete("/payments/:id", async (req, res) => {
   }
 });
 
-/* ================= SOCKET ================= */
+/* ================= MANIPULAÇÃO DE SESSÕES WEBSOCKET ================= */
 io.on("connection", (socket) => {
-  console.log("⚡ Socket conectado:", socket.id);
+  console.log("⚡ Novo dispositivo conectado ao Socket:", socket.id);
   socket.on("join", (userId) => {
     socket.join(userId);
-    console.log(`🟢 Usuário ${userId} entrou`);
+    console.log(`🟢 Usuário ${userId} sincronizado nos canais ativos`);
   });
-  socket.on("disconnect", () => console.log("⚪ Socket desconectado"));
+  socket.on("disconnect", () => console.log("⚪ Conexão de socket encerrada"));
 });
 
-/* ================= START ================= */
-const PORT = process.env.PORT || 5000;
+/* ================= INICIALIZAÇÃO DO SERVIDOR ================= */
+const PORT = process.env.PORT || 3000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`🚀 Servidor do Procurojob ativo e rodando na porta ${PORT}`);
 });
