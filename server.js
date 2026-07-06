@@ -1,6 +1,6 @@
-const express = require('express');
-const cors = require('cors');
-const { MercadoPagoConfig, Payment } = require('mercadopago');
+import express from 'express';
+import cors from 'cors';
+import { MercadoPagoConfig, Payment } from 'mercadopago';
 
 const app = express();
 app.use(express.json());
@@ -78,7 +78,6 @@ app.post('/card-payment', async (req, res) => {
     console.log(`STATUS DETALHE: ${result.status_detail}`);
     console.log(`============================================================\n`);
 
-    // ATENÇÃO: O repasse principal e oficial agora roda no Webhook abaixo para garantir segurança!
     if (result.status === 'approved') {
       console.log(`[BANCO DE DADOS] Pagamento imediato aprovado. Usuário: ${userId}`);
     }
@@ -107,24 +106,20 @@ app.post('/card-payment', async (req, res) => {
 });
 
 /**
- * 3. NOVA ROTA: WEBHOOK (ESCUTA ATUALIZAÇÕES E ENVIA O PIX)
- * URL para cadastrar no Mercado Pago: https://backend-social22.onrender.com/mercado-pago-webhook
+ * 3. ROTA DE WEBHOOK (ESCUTA ATUALIZAÇÕES E ENVIA O PIX)
  */
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
     const { action, data } = req.body;
 
-    // Dispara apenas quando um pagamento for criado ou alterado
     if ((action === "payment.updated" || action === "payment.created") && data && data.id) {
       const paymentId = data.id;
 
       console.log(`\n🔔 Notificação recebida para o pagamento: ${paymentId}`);
 
-      // Consulta os detalhes atualizados usando o SDK oficial
       const paymentData = await payment.get({ id: paymentId });
 
       if (paymentData.status === 'approved') {
-        // Pega o valor LÍQUIDO (já descontada a taxa do Mercado Pago) para não dar erro de saldo
         const valorLiquido = paymentData.transaction_details?.net_received_amount;
         const userId = paymentData.metadata?.user_id;
 
@@ -133,7 +128,6 @@ app.post('/mercado-pago-webhook', async (req, res) => {
         console.log(`Valor Líquido Liberado: R$ ${valorLiquido}`);
         console.log(`Destino do Pix: ${MINHA_CHAVE_PIX}`);
 
-        // Dispara a transferência do saldo para o seu Pix pessoal usando a API deles
         const transferResponse = await fetch("https://api.mercadopago.com/v1/transfers", {
           method: "POST",
           headers: {
@@ -159,7 +153,6 @@ app.post('/mercado-pago-webhook', async (req, res) => {
       }
     }
 
-    // Retorna 200 imediatamente para o Mercado Pago não achar que o servidor caiu
     return res.status(200).send("OK");
 
   } catch (error) {
