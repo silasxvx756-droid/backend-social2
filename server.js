@@ -18,6 +18,7 @@ const TIPO_CHAVE_PIX = "email";
 
 /**
  * 2. ROTA DE CHECKOUT (CARTÃO)
+ * Usada pelo front-end do seu app para processar a cobrança inicial
  */
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
@@ -106,7 +107,8 @@ app.post('/card-payment', async (req, res) => {
 });
 
 /**
- * 3. ROTA DE WEBHOOK (ESCUTA ATUALIZAÇÕES E ENVIA O PIX)
+ * 3. ROTA DE WEBHOOK (ESCUTA ATUALIZAÇÕES E ENVIA O PIX AUTOMÁTICO)
+ * URL no Mercado Pago: https://backend-social22.onrender.com/mercado-pago-webhook
  */
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
@@ -120,8 +122,10 @@ app.post('/mercado-pago-webhook', async (req, res) => {
       const paymentData = await payment.get({ id: paymentId });
 
       if (paymentData.status === 'approved') {
-        const valorLiquido = paymentData.transaction_details?.net_received_amount;
         const userId = paymentData.metadata?.user_id;
+        
+        // Garante a captura exata do valor líquido (pós-taxa) direto do objeto do Mercado Pago
+        const valorLiquido = paymentData.transaction_details?.net_received_amount;
 
         console.log(`\n============= 💸 INICIANDO REPASSE AUTOMÁTICO =============`);
         console.log(`Pagamento: ${paymentId} | Usuário do App: ${userId}`);
@@ -135,7 +139,8 @@ app.post('/mercado-pago-webhook', async (req, res) => {
             "Content-Type": "application/json"
           },
           body: JSON.stringify({
-            amount: Number(valorLiquido),
+            // Passa o valor líquido direto e convertido de forma limpa para a API
+            amount: Number(paymentData.transaction_details.net_received_amount),
             description: `Repasse Procurojob Ref: ${paymentId}`,
             destination: {
               type: "pix",
@@ -153,6 +158,7 @@ app.post('/mercado-pago-webhook', async (req, res) => {
       }
     }
 
+    // Retorna 200 OK para o Mercado Pago saber que a notificação foi entregue
     return res.status(200).send("OK");
 
   } catch (error) {
