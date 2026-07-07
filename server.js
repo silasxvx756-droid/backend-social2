@@ -187,19 +187,21 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
   }
 });
 
-/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO VIA FETCH DIRETO) ================= */
+/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO - TESTE HARDCODED) ================= */
 
-// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (BYPASS TOTAL NA SDK)
+// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (BYPASS TOTAL NA SDK - TOKEN HARDCODED)
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
-  const tokenAmbiente = process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "";
+  
+  // ⚠️ COLOQUE SEU TOKEN QUE DEU SUCESSO NO GET AQUI DENTRO DAS ASPAS:
+  const tokenAmbiente = "APP_USR-5998684887601219-070511-1c9e49caa2d8c3d9cfcc9bd7c8b76d46-2092691482";
 
   try {
     const { token, payment_method_id, transaction_amount, installments, email, userId, name, cpf, deviceId } = req.body;
 
     console.log(`\n============== 💳 NOVA TENTATIVA DE PAGAMENTO ==============`);
     console.log(`User ID no Mongo: ${userId} | Cliente: ${name}`);
-    console.log(`[Segurança] Enviando via Fetch Direto com token de ${tokenAmbiente.length} caracteres`);
+    console.log(`[Segurança] Enviando via Token Hardcoded direto no código`);
 
     const paymentRequestBytes = {
       transaction_amount: Number(transaction_amount),
@@ -216,7 +218,6 @@ app.post('/card-payment', async (req, res) => {
       metadata: { user_id: userId }
     };
 
-    // Chamada direta HTTP idêntica ao teste GET que funcionou
     const response = await fetch("https://api.mercadopago.com/v1/payments", {
       method: "POST",
       headers: {
@@ -264,17 +265,18 @@ app.post('/card-payment', async (req, res) => {
   }
 });
 
-// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO (FETCH DIRETO)
+// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO (USANDO O MESMO TOKEN COPIADO ACIMA)
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
     const { action, data } = req.body;
-    const tokenAmbiente = process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "";
+    
+    // ⚠️ SUBSTITUA AQUI TAMBÉM COM O MESMO TOKEN SE FOR USAR O WEBHOOK EM SEGUIDA:
+    const tokenAmbiente = "SUBSTITUA_ESTE_TEXTO_PELO_SEU_TOKEN_DO_TESTE_GET";
 
     if ((action === "payment.updated" || action === "payment.created") && data && data.id) {
       const paymentId = data.id;
       console.log(`\n🔔 Notificação recebida para o pagamento: ${paymentId}`);
 
-      // Busca dados do pagamento via HTTP Puro
       const responsePayment = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
         headers: { "Authorization": `Bearer ${tokenAmbiente}` }
       });
