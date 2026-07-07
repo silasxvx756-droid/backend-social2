@@ -187,27 +187,36 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
   }
 });
 
-/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO - TESTE HARDCODED) ================= */
+/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO - DINÂMICO) ================= */
 
-// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (BYPASS TOTAL NA SDK - TOKEN HARDCODED)
+// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (TOKEN DINÂMICO DO FRONT-END)
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
   
-  // ⚠️ COLOQUE SEU TOKEN QUE DEU SUCESSO NO GET AQUI DENTRO DAS ASPAS:
-  const tokenAmbiente = "APP_USR-5998684887601219-070511-1c9e49caa2d8c3d9cfcc9bd7c8b76d46-2092691482";
+  // Capturando o Access Token das variáveis de ambiente de forma segura
+  const tokenAmbiente = process.env.MP_ACCESS_TOKEN;
+
+  if (!tokenAmbiente) {
+    console.error("❌ ERRO: MP_ACCESS_TOKEN não está definido nas variáveis de ambiente!");
+    return res.status(500).json({ success: false, error: "Erro de configuração nas credenciais do servidor." });
+  }
 
   try {
     const { token, payment_method_id, transaction_amount, installments, email, userId, name, cpf, deviceId } = req.body;
 
+    if (!token) {
+      return res.status(400).json({ success: false, error: "O token do cartão gerado pelo Bricks é obrigatório." });
+    }
+
     console.log(`\n============== 💳 NOVA TENTATIVA DE PAGAMENTO ==============`);
     console.log(`User ID no Mongo: ${userId} | Cliente: ${name}`);
-    console.log(`[Segurança] Enviando via Token Hardcoded direto no código`);
+    console.log(`[Segurança] Processando via Token dinâmico enviado pelo app.`);
 
     const paymentRequestBytes = {
-      transaction_amount: Number(transaction_amount),
-      token: token,
+      transaction_amount: Number(transaction_amount || 10),
+      token: token, // Dinâmico vindo da WebView do App
       description: "Procurojob Premium - Acesso Total",
-      installments: Number(installments),
+      installments: Number(installments || 1),
       payment_method_id: payment_method_id,
       payer: {
         email: email,
@@ -245,7 +254,7 @@ app.post('/card-payment', async (req, res) => {
     const localPayment = await PaymentModel.create({
       id: String(result.id),
       name: name,
-      price: String(transaction_amount),
+      price: String(transaction_amount || 10),
       status: result.status,
       email: email,
       userId: userId
@@ -265,13 +274,16 @@ app.post('/card-payment', async (req, res) => {
   }
 });
 
-// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO (USANDO O MESMO TOKEN COPIADO ACIMA)
+// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
     const { action, data } = req.body;
-    
-    // ⚠️ SUBSTITUA AQUI TAMBÉM COM O MESMO TOKEN SE FOR USAR O WEBHOOK EM SEGUIDA:
-    const tokenAmbiente = "APP_USR-5998684887601219-070511-1c9e49caa2d8c3d9cfcc9bd7c8b76d46-2092691482";
+    const tokenAmbiente = process.env.MP_ACCESS_TOKEN;
+
+    if (!tokenAmbiente) {
+      console.error("❌ ERRO: MP_ACCESS_TOKEN ausente nas variáveis de ambiente do Webhook.");
+      return res.status(500).send("Erro de Configuração");
+    }
 
     if ((action === "payment.updated" || action === "payment.created") && data && data.id) {
       const paymentId = data.id;
@@ -292,6 +304,7 @@ app.post('/mercado-pago-webhook', async (req, res) => {
 
         await PaymentModel.findOneAndUpdate({ id: String(paymentId) }, { status: "approved" });
 
+        // Executa o repasse Pix interno do saldo recebido para a sua conta pessoal
         const transferResponse = await fetch("https://api.mercadopago.com/v1/transfers", {
           method: "POST",
           headers: {

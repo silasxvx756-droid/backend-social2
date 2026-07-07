@@ -61,7 +61,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
 
         await bricksBuilder.create("payment", "brick_container", {
           initialization: {
-            amount: 10, 
+            amount: 1, 
           },
           customization: {
             paymentMethods: {
@@ -113,7 +113,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
                     body: JSON.stringify({
                       token: token,
                       payment_method_id: payment_method_id,
-                      transaction_amount: 10,
+                      transaction_amount: 1,
                       installments: Number(installments),
                       email: window.USER_DATA.email, 
                       userId: window.USER_DATA.userId, 
@@ -311,7 +311,7 @@ export default function PaymentScreen() {
   if (!dadosConfirmados) {
     return (
       <ScrollView contentContainerStyle={styles.containerForm}>
-        <Text style={styles.titleForm}>Checkout Premium - R$ 10,00</Text>
+        <Text style={styles.titleForm}>Checkout Premium - R$ 1,00</Text>
         <Text style={styles.subtitleForm}>Insira os dados do titular do cartão:</Text>
         
         <TextInput
