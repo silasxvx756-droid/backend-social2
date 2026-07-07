@@ -12,12 +12,6 @@ import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
-// Configura a SDK oficial com o Token vindo do ambiente
-const mpClient = new MercadoPagoConfig({
-  accessToken: process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "",
-});
-const paymentInstance = new Payment(mpClient);
-
 // Configurações de repasse Pix pessoal do Procurojob
 const MINHA_CHAVE_PIX = "silas_santos@outlook.com"; 
 const TIPO_CHAVE_PIX = "email"; 
@@ -196,11 +190,11 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
 
 /* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO) ================= */
 
-// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (CORRIGIDA COM RE-INJEÇÃO DE TOKEN)
+// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (INSTÂNCIA LOCAL DINÂMICA)
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
   
-  // Resgata o token diretamente na chamada para anular escopos perdidos do Render
+  // Captura o token direto do ambiente do Render no milissegundo do clique
   const tokenAmbiente = process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "";
 
   try {
@@ -208,6 +202,11 @@ app.post('/card-payment', async (req, res) => {
 
     console.log(`\n============== 💳 NOVA TENTATIVA DE PAGAMENTO ==============`);
     console.log(`User ID no Mongo: ${userId} | Cliente: ${name}`);
+    console.log(`[Segurança] Tamanho do Token lido no Render: ${tokenAmbiente.length} caracteres`);
+
+    // Força a criação do cliente com o estado atualizado das variáveis do Render
+    const localMpClient = new MercadoPagoConfig({ accessToken: tokenAmbiente });
+    const localPaymentInstance = new Payment(localMpClient);
 
     const paymentRequest = {
       body: {
@@ -228,16 +227,15 @@ app.post('/card-payment', async (req, res) => {
         idempotencyKey: idempotencyKey,
         headers: { 
           'X-Melidata-Session-Id': deviceId,
-          'Authorization': `Bearer ${tokenAmbiente}` // Força o cabeçalho explicitamente
+          'Authorization': `Bearer ${tokenAmbiente}`
         }
       }
     };
 
-    const result = await paymentInstance.create(paymentRequest);
+    const result = await localPaymentInstance.create(paymentRequest);
 
     console.log(`\n✅ RESPOSTA DO MERCADO PAGO: ID ${result.id} | STATUS: ${result.status}`);
 
-    // Salva na coleção local sem expor dados do cartão fisicamente
     const localPayment = await PaymentModel.create({
       id: String(result.id),
       name: name,
@@ -272,7 +270,11 @@ app.post('/mercado-pago-webhook', async (req, res) => {
       const paymentId = data.id;
       console.log(`\n🔔 Notificação recebida para o pagamento: ${paymentId}`);
 
-      const paymentData = await paymentInstance.get({ id: paymentId });
+      // Instancia dinamicamente no Webhook também
+      const localMpClient = new MercadoPagoConfig({ accessToken: tokenAmbiente });
+      const localPaymentInstance = new Payment(localMpClient);
+
+      const paymentData = await localPaymentInstance.get({ id: paymentId });
 
       if (paymentData.status === 'approved') {
         const userId = paymentData.metadata?.user_id;
@@ -281,10 +283,8 @@ app.post('/mercado-pago-webhook', async (req, res) => {
         console.log(`\n============= 💸 INICIANDO REPASSE AUTOMÁTICO =============`);
         console.log(`Pagamento aprovado: ${paymentId} | Valor Líquido: R$ ${valorLiquido}`);
 
-        // Atualiza banco de dados local
         await PaymentModel.findOneAndUpdate({ id: String(paymentId) }, { status: "approved" });
 
-        // Executa a transferência Pix direta para sua conta
         const transferResponse = await fetch("https://api.mercadopago.com/v1/transfers", {
           method: "POST",
           headers: {
