@@ -271,7 +271,7 @@ app.post('/mercado-pago-webhook', async (req, res) => {
     const { action, data } = req.body;
     
     // ⚠️ SUBSTITUA AQUI TAMBÉM COM O MESMO TOKEN SE FOR USAR O WEBHOOK EM SEGUIDA:
-    const tokenAmbiente = "SUBSTITUA_ESTE_TEXTO_PELO_SEU_TOKEN_DO_TESTE_GET";
+    const tokenAmbiente = "APP_USR-5998684887601219-070511-1c9e49caa2d8c3d9cfcc9bd7c8b76d46-2092691482";
 
     if ((action === "payment.updated" || action === "payment.created") && data && data.id) {
       const paymentId = data.id;
