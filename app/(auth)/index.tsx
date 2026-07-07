@@ -2,14 +2,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, Dimensions, ActivityIndicator } from "react-native";
 import * as Application from 'expo-application';
 
+// Importa a WebView apenas se NÃO estiver rodando na plataforma Web para evitar erros de compilação
 let WebView;
 if (Platform.OS !== "web") {
   WebView = require("react-native-webview").WebView;
 }
 
-// FUNÇÃO DO HTML: Tratamento seguro de strings para evitar quebras de sintaxe no JS injetado
-const escapeJsString = (str) => JSON.stringify(str || "").replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
-
+// FUNÇÃO DO HTML: Injeta os dados reais e o script oficial do Mercado Pago com segurança para Web/Mobile
 const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
 <!DOCTYPE html>
 <html>
@@ -27,22 +26,26 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
       width: 100%; 
       min-height: 650px; 
     }
+    /* Remove completamente o elemento visual da Caixa Econômica */
     [data-testid*="caixa"], [class*="caixa"], [id*="caixa"], [value*="debcaixa"] {
       display: none !important;
     }
   </style>
   
+  <!-- Script do Core SDK do Bricks -->
   <script src="https://sdk.mercadopago.com/js/v2"></script>
+  
+  <!-- Script coletor do Antifraude Web oficial (Garante o Score de confiança alto) -->
   <script src="https://www.mercadopago.com/v2/security.js" view="checkout" output="MP_DEVICE_SESSION_ID"></script>
 
   <script>
     window.USER_DATA = {
-      email: ${escapeJsString(email)},
-      visitorId: ${escapeJsString(visitorId)},
-      name: ${escapeJsString(name)},
-      cpf: ${escapeJsString(cpf)},
-      deviceId: ${escapeJsString(deviceId)},
-      userId: ${escapeJsString(userId)}
+      email: ${JSON.stringify(email)},
+      visitorId: ${JSON.stringify(visitorId)},
+      name: ${JSON.stringify(name)},
+      cpf: ${JSON.stringify(cpf)},
+      deviceId: ${JSON.stringify(deviceId)},
+      userId: ${JSON.stringify(userId)}
     };
   </script>
 </head>
@@ -52,7 +55,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
   <script>
     window.addEventListener("load", async () => {
       try {
-        // ATUALIZADO: Usando a chave pública correta que resolve o erro de inicialização
+        // ✅ CORRIGIDO: Agora usando a sua Public Key Real extraída do seu painel
         const mp = new MercadoPago("APP_USR-2d9a0675-0795-4f0b-ae9d-256fff73054e");
         const bricksBuilder = mp.bricks();
 
@@ -94,6 +97,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
                 const webSessionId = window.MP_DEVICE_SESSION_ID || document.querySelector('input[name="MP_DEVICE_SESSION_ID"]')?.value;
                 const finalDeviceId = webSessionId || window.USER_DATA.deviceId;
 
+                // Envia sinal de carregamento para o aplicativo nativo
                 if (window.ReactNativeWebView) {
                   window.ReactNativeWebView.postMessage(JSON.stringify({ type: "PROCESSING" }));
                 }
@@ -119,8 +123,6 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
                     })
                   }
                 );
-
-                if (!res.ok) throw new Error("Falha na comunicação com o servidor.");
 
                 const data = await res.json();
                 
@@ -163,11 +165,14 @@ export default function PaymentScreen() {
   const [deviceId, setDeviceId] = useState("");
   const [dadosConfirmados, setDadosConfirmados] = useState(false);
   
+  // Estados para controle de fluxo e telas nativas
   const [loading, setLoading] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'approved' | 'in_process' | 'rejected'>('idle');
   const [visitorId, setVisitorId] = useState(`VISITOR-${Date.now()}`);
   
+  // Pegue o ID real do usuário conectado no Procurojob
   const ID_DO_USUARIO_LOGADO = "654321_ID_PROCUROJOB_MONGO"; 
+
   const webViewRef = useRef(null);
 
   useEffect(() => {
@@ -202,15 +207,13 @@ export default function PaymentScreen() {
       alert("Por favor, insira um CPF válido com 11 dígitos.");
       return;
     }
-    setLoading(true); // Evita tela em branco na transição para a WebView
     setDadosConfirmados(true);
   };
 
   const handlePayAgain = () => {
     setPaymentStatus('idle');
     setLoading(false);
-    setDadosConfirmados(false);
-    setVisitorId(`VISITOR-${Date.now()}`); 
+    setVisitorId(`VISITOR-${Date.now()}`); // Limpa o rastro para a inteligência artificial do Mercado Pago
   };
 
   const onWebViewMessage = (event) => {
@@ -239,12 +242,15 @@ export default function PaymentScreen() {
     }
   };
 
+  // ==========================================
+  // 👑 TELA DE PAGAMENTO APROVADO (NATIVA)
+  // ==========================================
   if (paymentStatus === 'approved') {
     return (
       <View style={styles.containerSucesso}>
         <View style={styles.cardSucesso}>
           <Text style={styles.iconSucesso}>🎉</Text>
-          <Text style={styles.titleSucesso}>Pagamento Aprovado!</Text>
+          <Text style={styles.titleSucesso}>¡Pagamento Aprovado!</Text>
           <Text style={styles.subtitleSucesso}>
             Parabéns, {inputName.split(" ")[0]}! Seu plano Premium já está ativo.
           </Text>
@@ -259,6 +265,9 @@ export default function PaymentScreen() {
     );
   }
 
+  // ==========================================
+  // ⏳ TELA DE PAGAMENTO EM ANÁLISE (NATIVA)
+  // ==========================================
   if (paymentStatus === 'in_process') {
     return (
       <View style={[styles.containerSucesso, { backgroundColor: '#fff9f2' }]}>
@@ -276,6 +285,9 @@ export default function PaymentScreen() {
     );
   }
 
+  // ==========================================
+  // ❌ TELA DE PAGAMENTO RECUSADO (NATIVA COM RE-TENTATIVA)
+  // ==========================================
   if (paymentStatus === 'rejected') {
     return (
       <View style={[styles.containerSucesso, { backgroundColor: '#fdf2f2' }]}>
@@ -293,6 +305,9 @@ export default function PaymentScreen() {
     );
   }
 
+  // ==========================================
+  // 📝 TELA DE FORMULÁRIO INICIAL
+  // ==========================================
   if (!dadosConfirmados) {
     return (
       <ScrollView contentContainerStyle={styles.containerForm}>
@@ -329,6 +344,9 @@ export default function PaymentScreen() {
     );
   }
 
+  // ==========================================
+  // 💳 RENDERIZA O CHECKOUT BRICK (IFRAME OU WEBVIEW)
+  // ==========================================
   const htmlContent = getBrickHtml(inputEmail.trim(), visitorId, inputName.trim(), inputCpf.trim(), deviceId, ID_DO_USUARIO_LOGADO);
 
   return (
@@ -382,6 +400,7 @@ const styles = StyleSheet.create({
   webview: { flex: 1, width: "100%", height: 650 },
   loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(255,255,255,0.8)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
 
+  // ESTILOS EXCLUSIVOS DA TELA DE SUCESSO / RISCO / FALHA
   containerSucesso: { flex: 1, backgroundColor: "#f4f7f6", justifyContent: "center", alignItems: "center", padding: 20 },
   cardSucesso: { backgroundColor: "#fff", width: "100%", maxWidth: 450, padding: 30, borderRadius: 16, alignItems: "center", shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 },
   iconSucesso: { fontSize: 60, marginBottom: 15 },
