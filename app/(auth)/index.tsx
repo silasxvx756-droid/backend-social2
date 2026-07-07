@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, Dimensions, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet, TextInput, TouchableOpacity, ScrollView, Platform, ActivityIndicator } from "react-native";
 import * as Application from 'expo-application';
+import io from "socket.io-client"; // 👈 Importação do Socket.io
 
 // Importa a WebView apenas se NÃO estiver rodando na plataforma Web para evitar erros de compilação
 let WebView;
 if (Platform.OS !== "web") {
   WebView = require("react-native-webview").WebView;
 }
+
+// URL do seu backend no Render
+const BACKEND_URL = "https://backend-social22.onrender.com";
 
 // FUNÇÃO DO HTML: Injeta os dados reais e o script oficial do Mercado Pago com segurança para Web/Mobile
 const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
@@ -55,7 +59,6 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
   <script>
     window.addEventListener("load", async () => {
       try {
-        // ✅ CORRIGIDO: Agora usando a sua Public Key Real extraída do seu painel
         const mp = new MercadoPago("APP_USR-2d9a0675-0795-4f0b-ae9d-256fff73054e");
         const bricksBuilder = mp.bricks();
 
@@ -103,7 +106,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
                 }
 
                 const res = await fetch(
-                  "https://backend-social22.onrender.com/card-payment",
+                  "${BACKEND_URL}/card-payment",
                   {
                     method: "POST",
                     headers: { 
@@ -174,7 +177,9 @@ export default function PaymentScreen() {
   const ID_DO_USUARIO_LOGADO = "654321_ID_PROCUROJOB_MONGO"; 
 
   const webViewRef = useRef(null);
+  const socketRef = useRef(null);
 
+  // 1. Efeito para coletar o Fingerprint do Dispositivo
   useEffect(() => {
     async function fetchDeviceFingerprint() {
       try {
@@ -193,6 +198,41 @@ export default function PaymentScreen() {
     }
     fetchDeviceFingerprint();
   }, []);
+
+  // 2. 🟢 CONEXÃO COM O SOCKET EM TEMPO REAL (CANAL PRIVADO)
+  useEffect(() => {
+    // Inicializa a conexão com o servidor do Render
+    socketRef.current = io(BACKEND_URL);
+
+    socketRef.current.on("connect", () => {
+      console.log("⚡ Conectado ao servidor Socket.io com ID:", socketRef.current.id);
+      // Entra na sala privada baseada no ID do usuário logado
+      socketRef.current.emit("join", ID_DO_USUARIO_LOGADO);
+    });
+
+    // Escuta as atualizações de pagamento direcionadas apenas a este usuário
+    socketRef.current.on("new-payment", (paymentData) => {
+      console.log("💰 Atualização de pagamento em tempo real via Socket:", paymentData);
+      
+      if (paymentData.status === "approved") {
+        setPaymentStatus('approved');
+        setLoading(false);
+      } else if (paymentData.status === "in_process" || paymentData.status === "pending") {
+        setPaymentStatus('in_process');
+        setLoading(false);
+      } else if (paymentData.status === "rejected" || paymentData.status === "cancelled") {
+        setPaymentStatus('rejected');
+        setLoading(false);
+      }
+    });
+
+    // Desconecta o ouvinte ao desmontar a tela
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
+    };
+  }, [ID_DO_USUARIO_LOGADO]);
 
   const iniciarCheckout = () => {
     if (!inputEmail.includes("@") || !inputEmail.includes(".")) {
@@ -213,7 +253,7 @@ export default function PaymentScreen() {
   const handlePayAgain = () => {
     setPaymentStatus('idle');
     setLoading(false);
-    setVisitorId(`VISITOR-${Date.now()}`); // Limpa o rastro para a inteligência artificial do Mercado Pago
+    setVisitorId(`VISITOR-${Date.now()}`); // Reseta o Idempotency Key para uma nova tentativa limpa
   };
 
   const onWebViewMessage = (event) => {
@@ -225,13 +265,16 @@ export default function PaymentScreen() {
       } else if (response.type === "PROCESSING") {
         setLoading(true);
       } else if (response.type === "RESULT") {
-        setLoading(false);
+        // Deixamos o Socket.io tomar a frente ou alteramos imediatamente se a requisição HTTP direta responder antes
         if (response.status === "approved") {
           setPaymentStatus('approved');
+          setLoading(false);
         } else if (response.status === "in_process") {
           setPaymentStatus('in_process');
-        } else {
+          setLoading(false);
+        } else if (response.status === "rejected") {
           setPaymentStatus('rejected');
+          setLoading(false);
         }
       } else if (response.type === "ERROR") {
         setLoading(false);

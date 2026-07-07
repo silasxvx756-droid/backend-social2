@@ -192,8 +192,6 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
 // ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (TOKEN DINÂMICO DO FRONT-END)
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
-  
-  // Capturando o Access Token das variáveis de ambiente de forma segura
   const tokenAmbiente = process.env.MP_ACCESS_TOKEN;
 
   if (!tokenAmbiente) {
@@ -210,11 +208,11 @@ app.post('/card-payment', async (req, res) => {
 
     console.log(`\n============== 💳 NOVA TENTATIVA DE PAGAMENTO ==============`);
     console.log(`User ID no Mongo: ${userId} | Cliente: ${name}`);
-    console.log(`[Segurança] Processando via Token dinâmico enviado pelo app.`);
+    console.log(`Device ID (Antifraude): ${deviceId || "Não enviado"}`);
 
     const paymentRequestBytes = {
       transaction_amount: Number(transaction_amount || 10),
-      token: token, // Dinâmico vindo da WebView do App
+      token: token,
       description: "Procurojob Premium - Acesso Total",
       installments: Number(installments || 1),
       payment_method_id: payment_method_id,
@@ -227,13 +225,14 @@ app.post('/card-payment', async (req, res) => {
       metadata: { user_id: userId }
     };
 
+    // Injeção do X-Melidata-Session-Id nos headers da requisição do Mercado Pago
     const response = await fetch("https://api.mercadopago.com/v1/payments", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${tokenAmbiente}`,
         "Content-Type": "application/json",
         "X-Idempotency-Key": idempotencyKey,
-        "X-Melidata-Session-Id": deviceId
+        "X-Melidata-Session-Id": deviceId // 👈 Adicionado de forma estrita para evitar reparações antifraude
       },
       body: JSON.stringify(paymentRequestBytes)
     });
@@ -249,7 +248,10 @@ app.post('/card-payment', async (req, res) => {
       });
     }
 
-    console.log(`\n✅ RESPOSTA DO MERCADO PAGO: ID ${result.id} | STATUS: ${result.status}`);
+    console.log(`\n🔍 DETALHES DO RETORNO MP:`);
+    console.log(`ID: ${result.id}`);
+    console.log(`Status: ${result.status}`);
+    console.log(`Detalhe do Status: ${result.status_detail}`); 
 
     const localPayment = await PaymentModel.create({
       id: String(result.id),
@@ -260,11 +262,19 @@ app.post('/card-payment', async (req, res) => {
       userId: userId
     });
 
-    io.emit("new-payment", localPayment);
+    // 🟢 Dispara o Socket apenas para o canal privado (sala) deste usuário específico
+    if (userId) {
+      io.to(userId).emit("new-payment", localPayment);
+      console.log(`⚡ Evento de pagamento enviado exclusivamente para a sala do usuário: ${userId}`);
+    }
 
     return res.status(200).json({
       success: true,
-      mercadoPago: { id: result.id, status: result.status, status_detail: result.status_detail }
+      mercadoPago: { 
+        id: result.id, 
+        status: result.status, 
+        status_detail: result.status_detail 
+      }
     });
 
   } catch (error) {
@@ -302,9 +312,18 @@ app.post('/mercado-pago-webhook', async (req, res) => {
         console.log(`\n============= 💸 INICIANDO REPASSE AUTOMÁTICO =============`);
         console.log(`Pagamento aprovado: ${paymentId} | Valor Líquido: R$ ${valorLiquido}`);
 
-        await PaymentModel.findOneAndUpdate({ id: String(paymentId) }, { status: "approved" });
+        const updatedPayment = await PaymentModel.findOneAndUpdate(
+          { id: String(paymentId) }, 
+          { status: "approved" },
+          { new: true }
+        );
 
-        // Executa o repasse Pix interno do saldo recebido para a sua conta pessoal
+        // 🟢 Se o pagamento mudar de status via Webhook de fora do app, notifica o usuário via canal privado
+        if (userId && updatedPayment) {
+          io.to(userId).emit("new-payment", updatedPayment);
+          console.log(`⚡ Notificação via Webhook disparada para a sala do usuário: ${userId}`);
+        }
+
         const transferResponse = await fetch("https://api.mercadopago.com/v1/transfers", {
           method: "POST",
           headers: {
@@ -347,6 +366,8 @@ app.delete("/payments/:id", async (req, res) => {
   try {
     const deleted = await PaymentModel.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ success: false, error: "Pagamento não encontrado" });
+    
+    // Notifica de forma geral apenas a remoção (se necessário para painéis)
     io.emit("delete-payment", req.params.id);
     res.json({ success: true, message: "Pagamento removido" });
   } catch (err) {
@@ -357,10 +378,15 @@ app.delete("/payments/:id", async (req, res) => {
 /* ================= MANIPULAÇÃO DE SESSÕES WEBSOCKET ================= */
 io.on("connection", (socket) => {
   console.log("⚡ Novo dispositivo conectado ao Socket:", socket.id);
+  
+  // O Front-end do app precisa dar um socket.emit("join", userId) ao conectar!
   socket.on("join", (userId) => {
-    socket.join(userId);
-    console.log(`🟢 Usuário ${userId} sincronizado nos canais ativos`);
+    if (userId) {
+      socket.join(userId);
+      console.log(`🟢 Usuário ${userId} sincronizado com sucesso no canal privado.`);
+    }
   });
+  
   socket.on("disconnect", () => console.log("⚪ Conexão de socket encerrada"));
 });
 
