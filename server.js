@@ -8,7 +8,6 @@ import streamifier from "streamifier";
 import fetch from "node-fetch";
 import http from "http";
 import { Server } from "socket.io";
-import { MercadoPagoConfig, Payment } from "mercadopago";
 
 dotenv.config();
 
@@ -188,13 +187,11 @@ app.post("/posts/upload", upload.single("image"), async (req, res) => {
   }
 });
 
-/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO) ================= */
+/* ================= SISTEMA DE PAGAMENTO INTEGRADO (MERCADO PAGO VIA FETCH DIRETO) ================= */
 
-// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (INSTÂNCIA LOCAL DINÂMICA)
+// ROTA 1: PROCESSAR COBRANÇA DO CARTÃO (BYPASS TOTAL NA SDK)
 app.post('/card-payment', async (req, res) => {
   const idempotencyKey = req.headers['x-idempotency-key'] || `req-${Date.now()}`;
-  
-  // Captura o token direto do ambiente do Render no milissegundo do clique
   const tokenAmbiente = process.env.MP_ACCESS_TOKEN ? process.env.MP_ACCESS_TOKEN.trim() : "";
 
   try {
@@ -202,37 +199,45 @@ app.post('/card-payment', async (req, res) => {
 
     console.log(`\n============== 💳 NOVA TENTATIVA DE PAGAMENTO ==============`);
     console.log(`User ID no Mongo: ${userId} | Cliente: ${name}`);
-    console.log(`[Segurança] Tamanho do Token lido no Render: ${tokenAmbiente.length} caracteres`);
+    console.log(`[Segurança] Enviando via Fetch Direto com token de ${tokenAmbiente.length} caracteres`);
 
-    // Força a criação do cliente com o estado atualizado das variáveis do Render
-    const localMpClient = new MercadoPagoConfig({ accessToken: tokenAmbiente });
-    const localPaymentInstance = new Payment(localMpClient);
-
-    const paymentRequest = {
-      body: {
-        transaction_amount: Number(transaction_amount),
-        token: token,
-        description: "Procurojob Premium - Acesso Total",
-        installments: Number(installments),
-        payment_method_id: payment_method_id,
-        payer: {
-          email: email,
-          first_name: name.split(" ")[0],
-          last_name: name.split(" ").slice(1).join(" ") || "Silva",
-          identification: { type: "CPF", number: cpf.replace(/\D/g, "") }
-        },
-        metadata: { user_id: userId }
+    const paymentRequestBytes = {
+      transaction_amount: Number(transaction_amount),
+      token: token,
+      description: "Procurojob Premium - Acesso Total",
+      installments: Number(installments),
+      payment_method_id: payment_method_id,
+      payer: {
+        email: email,
+        first_name: name.split(" ")[0],
+        last_name: name.split(" ").slice(1).join(" ") || "Silva",
+        identification: { type: "CPF", number: cpf.replace(/\D/g, "") }
       },
-      requestOptions: {
-        idempotencyKey: idempotencyKey,
-        headers: { 
-          'X-Melidata-Session-Id': deviceId,
-          'Authorization': `Bearer ${tokenAmbiente}`
-        }
-      }
+      metadata: { user_id: userId }
     };
 
-    const result = await localPaymentInstance.create(paymentRequest);
+    // Chamada direta HTTP idêntica ao teste GET que funcionou
+    const response = await fetch("https://api.mercadopago.com/v1/payments", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${tokenAmbiente}`,
+        "Content-Type": "application/json",
+        "X-Idempotency-Key": idempotencyKey,
+        "X-Melidata-Session-Id": deviceId
+      },
+      body: JSON.stringify(paymentRequestBytes)
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      console.error("\n❌ ERRO RETORNADO PELA API DO MERCADO PAGO:");
+      console.error(result);
+      return res.status(response.status).json({ 
+        success: false, 
+        error: result.message || (result.cause && result.cause[0]?.description) || "Erro na API do Mercado Pago" 
+      });
+    }
 
     console.log(`\n✅ RESPOSTA DO MERCADO PAGO: ID ${result.id} | STATUS: ${result.status}`);
 
@@ -253,14 +258,13 @@ app.post('/card-payment', async (req, res) => {
     });
 
   } catch (error) {
-    console.error("\n❌ ERRO CRÍTICO AO PROCESSAR PAGAMENTO NO BACKEND:");
-    const mpError = error.cause?.[0] || error;
-    console.error(mpError);
-    return res.status(500).json({ success: false, error: mpError.description || error.message });
+    console.error("\n❌ ERRO CRÍTICO NO BACKEND AO PROCESSAR COBRANÇA:");
+    console.error(error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO
+// ROTA 2: WEBHOOK DE ATUALIZAÇÃO E DISPARO DE REPASSE PIX AUTOMÁTICO (FETCH DIRETO)
 app.post('/mercado-pago-webhook', async (req, res) => {
   try {
     const { action, data } = req.body;
@@ -270,11 +274,12 @@ app.post('/mercado-pago-webhook', async (req, res) => {
       const paymentId = data.id;
       console.log(`\n🔔 Notificação recebida para o pagamento: ${paymentId}`);
 
-      // Instancia dinamicamente no Webhook também
-      const localMpClient = new MercadoPagoConfig({ accessToken: tokenAmbiente });
-      const localPaymentInstance = new Payment(localMpClient);
-
-      const paymentData = await localPaymentInstance.get({ id: paymentId });
+      // Busca dados do pagamento via HTTP Puro
+      const responsePayment = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+        headers: { "Authorization": `Bearer ${tokenAmbiente}` }
+      });
+      
+      const paymentData = await responsePayment.json();
 
       if (paymentData.status === 'approved') {
         const userId = paymentData.metadata?.user_id;
@@ -313,7 +318,7 @@ app.post('/mercado-pago-webhook', async (req, res) => {
   }
 });
 
-// HISTÓRICO LOCAL DE TRANSAÇÕES
+/* ================= HISTÓRICO LOCAL DE TRANSAÇÕES ================= */
 app.get("/payments", async (req, res) => {
   try {
     const payments = await PaymentModel.find().sort({ createdAt: -1 });
