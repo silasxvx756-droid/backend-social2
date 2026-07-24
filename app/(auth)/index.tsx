@@ -64,7 +64,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
 
         await bricksBuilder.create("payment", "brick_container", {
           initialization: {
-            amount: 800, 
+            amount: 1000, 
           },
           customization: {
             paymentMethods: {
@@ -116,7 +116,7 @@ const getBrickHtml = (email, visitorId, name, cpf, deviceId, userId) => `
                     body: JSON.stringify({
                       token: token,
                       payment_method_id: payment_method_id,
-                      transaction_amount: 800,
+                      transaction_amount: 1000,
                       installments: Number(installments),
                       email: window.USER_DATA.email, 
                       userId: window.USER_DATA.userId, 
